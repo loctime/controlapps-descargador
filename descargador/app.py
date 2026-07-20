@@ -2,7 +2,6 @@ import os
 import queue
 import threading
 import json
-import subprocess
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
