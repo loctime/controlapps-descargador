@@ -2,3 +2,4 @@ __pycache__/
 *.pyc
 estado.json
 *.rar
+.superpowers/

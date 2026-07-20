@@ -90,3 +90,18 @@ def test_run_queue_corta_en_pausa(tmp_path):
     assert len(procesados) == 1  # corta despues del primero (pausado)
     assert items[0].estado == "pausado"
     assert items[1].estado == "pendiente"
+
+
+def test_process_one_resolver_explota(tmp_path):
+    item = Item(url="http://x/a.rar/file", nombre="a.rar", carpeta=str(tmp_path))
+
+    def bad_get_resolver(url):
+        raise RuntimeError("boom")
+
+    eng = Engine(
+        get_resolver=bad_get_resolver,
+        download_fn=lambda **k: (True, 0, 0, "completo"),
+    )
+    motivo = eng.process_one(item)
+    assert motivo == "error"
+    assert item.estado == "fallido"

@@ -23,13 +23,13 @@ class Engine:
         item.estado = "descargando"
         self._notify(item)
 
-        resolver = self.get_resolver(item.url)
-        if resolver is None:
-            item.estado = "fallido"
-            self._notify(item)
-            return "sin_resolver"
-
         try:
+            resolver = self.get_resolver(item.url)
+            if resolver is None:
+                item.estado = "fallido"
+                self._notify(item)
+                return "sin_resolver"
+
             try:
                 direct = resolver.resolve(item.url)
             except NeedsBrowser as e:
