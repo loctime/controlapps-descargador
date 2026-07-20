@@ -1,4 +1,6 @@
-_RESOLVERS = []
+from .mediafire import MediaFireResolver
+
+_RESOLVERS = [MediaFireResolver()]
 
 
 def get_resolver(url):
