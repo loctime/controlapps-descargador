@@ -36,6 +36,18 @@ def download(direct_url, destino, on_progress=None, should_pause=None,
 
 
 def _download_simple(direct_url, destino, on_progress, should_pause, chunk_size):
+    prog = _sidecar(destino)
+    if os.path.exists(prog):
+        # Habia una descarga segmentada a medias: el archivo esta preasignado
+        # (tamano total, relleno de ceros) y NO se puede reanudar por tamano.
+        # Arrancamos limpio para no tomar los ceros como "completo".
+        for p in (prog, destino):
+            try:
+                if os.path.exists(p):
+                    os.remove(p)
+            except OSError:
+                pass
+
     ya = os.path.getsize(destino) if os.path.exists(destino) else 0
     headers = {"User-Agent": UA}
     if ya:
@@ -111,7 +123,10 @@ def _cargar_o_crear_segmentos(destino, total, conexiones):
     reanuda; si no, parte de cero.
     """
     prog = _sidecar(destino)
-    if os.path.exists(prog):
+    # Solo reanudamos si el archivo en disco respalda el progreso del sidecar
+    # (existe y esta preasignado al tamano total). Si no, el sidecar es basura.
+    respaldo_ok = os.path.exists(destino) and os.path.getsize(destino) == total
+    if os.path.exists(prog) and respaldo_ok:
         try:
             with open(prog, encoding="utf-8") as f:
                 data = json.load(f)
@@ -155,6 +170,11 @@ def _download_segmentado(direct_url, destino, total, on_progress, should_pause,
         except OSError:
             pass
 
+    # Persistimos el sidecar de entrada: si el proceso muere antes del primer
+    # guardado periodico, el archivo preasignado (ceros) queda marcado como
+    # descarga a medias y no se confunde con "completo".
+    guardar_prog()
+
     def bajar_segmento(s):
         inicio = s["inicio"] + s["done"]
         fin = s["fin"]  # exclusivo
@@ -167,6 +187,14 @@ def _download_segmentado(direct_url, destino, total, on_progress, should_pause,
         req = urllib.request.Request(direct_url, headers=headers)
         try:
             resp = urllib.request.urlopen(req, timeout=60)
+            if resp.status != 206:
+                # El server no respeto el Range (ej. un mirror devolvio 200 con
+                # el archivo entero). Escribir eso pisaria el segmento con bytes
+                # equivocados -> abortamos como error.
+                with lock:
+                    if estado["error"] is None:
+                        estado["error"] = RuntimeError(f"respuesta no-206 ({resp.status})")
+                return
             leido = 0
             with open(destino, "r+b") as f:
                 f.seek(inicio)
@@ -212,6 +240,13 @@ def _download_segmentado(direct_url, destino, total, on_progress, should_pause,
         guardar_prog()
         return (False, bajado, total, "pausado")
     if estado["error"] is not None:
+        guardar_prog()
+        return (False, bajado, total, "error")
+
+    if bajado != total:
+        # Algun segmento corto antes de completar su rango (EOF temprano, mirror
+        # que cierra) sin lanzar excepcion. No es completo: preservamos el
+        # sidecar para reanudar y NO borramos el archivo.
         guardar_prog()
         return (False, bajado, total, "error")
 
