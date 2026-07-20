@@ -129,11 +129,18 @@ class App:
             return
 
         def correr():
-            self.engine.run_queue(self.state.items)
+            motivo = self.engine.run_queue(self.state.items)
             self.state.save()
+            if motivo == "disco_lleno":
+                self.pausado.set()
+                self.root.after(0, self._aviso_disco_lleno)
 
         self.worker = threading.Thread(target=correr, daemon=True)
         self.worker.start()
+
+    def _aviso_disco_lleno(self):
+        self.btn_play.config(text="Reanudar")
+        messagebox.showwarning("Disco lleno", "No hay espacio en disco. Libera espacio y despues reanuda.")
 
     def _reintentar(self):
         for it in self.state.items:

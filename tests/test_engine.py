@@ -86,7 +86,8 @@ def test_run_queue_corta_en_pausa(tmp_path):
         get_resolver=lambda u: ResolverOK(),
         download_fn=download_fn,
     )
-    eng.run_queue(items)
+    motivo = eng.run_queue(items)
+    assert motivo == "pausado"
     assert len(procesados) == 1  # corta despues del primero (pausado)
     assert items[0].estado == "pausado"
     assert items[1].estado == "pendiente"

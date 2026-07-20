@@ -62,9 +62,10 @@ class Engine:
     def run_queue(self, items):
         for item in items:
             if self._should_pause():
-                return
+                return None
             if item.estado == "completo":
                 continue
             motivo = self.process_one(item)
             if motivo in ("pausado", "disco_lleno"):
-                return
+                return motivo
+        return None
