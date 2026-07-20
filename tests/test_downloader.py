@@ -48,6 +48,8 @@ def test_download_reanuda(tmp_path):
 class RangeHandler(http.server.BaseHTTPRequestHandler):
     contenido = b""
     recibio_range = False
+    servido = 0
+    _lock = threading.Lock()
 
     def log_message(self, *a):
         pass
@@ -57,29 +59,37 @@ class RangeHandler(http.server.BaseHTTPRequestHandler):
         rango = self.headers.get("Range")
         if rango:
             type(self).recibio_range = True
-            inicio = int(rango.split("=")[1].split("-")[0])
+            partes = rango.split("=")[1].split("-")
+            inicio = int(partes[0])
+            fin = int(partes[1]) if len(partes) > 1 and partes[1] else len(data) - 1
             if inicio >= len(data):
                 self.send_response(416)
                 self.send_header("Content-Range", f"bytes */{len(data)}")
                 self.end_headers()
                 return
-            cuerpo = data[inicio:]
+            fin = min(fin, len(data) - 1)
+            cuerpo = data[inicio:fin + 1]
             self.send_response(206)
-            self.send_header("Content-Range", f"bytes {inicio}-{len(data)-1}/{len(data)}")
+            self.send_header("Content-Range", f"bytes {inicio}-{fin}/{len(data)}")
             self.send_header("Content-Length", str(len(cuerpo)))
             self.end_headers()
             self.wfile.write(cuerpo)
+            with type(self)._lock:
+                type(self).servido += len(cuerpo)
         else:
             self.send_response(200)
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
+            with type(self)._lock:
+                type(self).servido += len(data)
 
 
 def _serve_range(contenido):
     RangeHandler.contenido = contenido
     RangeHandler.recibio_range = False
-    httpd = socketserver.TCPServer(("127.0.0.1", 0), RangeHandler)
+    RangeHandler.servido = 0
+    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), RangeHandler)
     port = httpd.server_address[1]
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     return httpd, port
@@ -135,5 +145,98 @@ def test_download_pausa(tmp_path):
         )
         assert not ok and motivo == "pausado"
         assert 0 < bajado < 5000
+    finally:
+        httpd.shutdown()
+
+
+# --- Descarga segmentada (multi-conexion) ---
+
+def test_probe_range_soporta(tmp_path):
+    from descargador.downloader import _probe_range
+    httpd, port = _serve_range(b"a" * 3000)
+    try:
+        total, soporta = _probe_range(f"http://127.0.0.1:{port}/x.bin")
+        assert soporta is True
+        assert total == 3000
+    finally:
+        httpd.shutdown()
+
+
+def test_probe_range_no_soporta(tmp_path):
+    from descargador.downloader import _probe_range
+    (tmp_path / "f.bin").write_bytes(b"a" * 3000)
+    httpd, port = _serve(str(tmp_path))
+    try:
+        total, soporta = _probe_range(f"http://127.0.0.1:{port}/f.bin")
+        assert soporta is False
+    finally:
+        httpd.shutdown()
+
+
+def test_download_segmentado_completo(tmp_path):
+    contenido = bytes(range(256)) * 40  # 10240 bytes, patron variado
+    httpd, port = _serve_range(contenido)
+    dest = tmp_path / "out.bin"
+    try:
+        ok, bajado, total, motivo = download(
+            f"http://127.0.0.1:{port}/x.bin", str(dest),
+            chunk_size=1024, conexiones=4,
+        )
+        assert ok and motivo == "completo"
+        assert total == len(contenido)
+        assert dest.read_bytes() == contenido  # offsets correctos
+        assert not (tmp_path / "out.bin.dlprog").exists()  # sidecar limpiado
+    finally:
+        httpd.shutdown()
+
+
+def test_download_segmentado_reanuda(tmp_path):
+    import json
+    contenido = bytes(range(256)) * 40  # 10240
+    total = len(contenido)
+    conexiones = 4
+    base = total // conexiones  # 2560
+    dest = tmp_path / "out.bin"
+    with open(dest, "wb") as f:
+        f.truncate(total)
+    segs = []
+    with open(dest, "r+b") as f:
+        for i in range(conexiones):
+            inicio = i * base
+            fin = total if i == conexiones - 1 else (i + 1) * base
+            done = (fin - inicio) // 2  # mitad ya bajada
+            f.seek(inicio)
+            f.write(contenido[inicio:inicio + done])
+            segs.append({"inicio": inicio, "fin": fin, "done": done})
+    (tmp_path / "out.bin.dlprog").write_text(json.dumps({"total": total, "segs": segs}))
+
+    httpd, port = _serve_range(contenido)
+    try:
+        ok, bajado, total_r, motivo = download(
+            f"http://127.0.0.1:{port}/x.bin", str(dest),
+            chunk_size=1024, conexiones=4,
+        )
+        assert ok and motivo == "completo"
+        assert dest.read_bytes() == contenido
+        assert RangeHandler.servido < total  # reanudo, no redescargo todo
+        assert not (tmp_path / "out.bin.dlprog").exists()
+    finally:
+        httpd.shutdown()
+
+
+def test_download_conexiones_fallback_una_sola(tmp_path):
+    # SimpleHTTPRequestHandler ignora Range -> probe ve 200 -> cae a 1 conexion
+    contenido = b"w" * 6000
+    (tmp_path / "f.bin").write_bytes(contenido)
+    httpd, port = _serve(str(tmp_path))
+    dest = tmp_path / "out.bin"
+    try:
+        ok, bajado, total, motivo = download(
+            f"http://127.0.0.1:{port}/f.bin", str(dest),
+            chunk_size=1024, conexiones=4,
+        )
+        assert ok and motivo == "completo"
+        assert dest.read_bytes() == contenido
+        assert not (tmp_path / "out.bin.dlprog").exists()  # nunca segmento
     finally:
         httpd.shutdown()

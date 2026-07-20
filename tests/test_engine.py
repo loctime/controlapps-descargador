@@ -29,7 +29,7 @@ def test_process_one_completo(tmp_path):
     item = Item(url="http://x/a.rar/file", nombre="a.rar", carpeta=str(tmp_path))
     eng = Engine(
         get_resolver=lambda u: ResolverOK(),
-        download_fn=lambda direct, destino, on_progress, should_pause: (True, 100, 100, "completo"),
+        download_fn=lambda direct, destino, on_progress, should_pause, conexiones=None: (True, 100, 100, "completo"),
     )
     motivo = eng.process_one(item)
     assert motivo == "completo"
@@ -45,7 +45,7 @@ def test_process_one_captcha_usa_browser(tmp_path):
         usados["page_url"] = page_url
         return "http://directo-via-browser/x.rar"
 
-    def download_fn(direct, destino, on_progress, should_pause):
+    def download_fn(direct, destino, on_progress, should_pause, conexiones=None):
         usados["direct"] = direct
         return (True, 50, 50, "completo")
 
@@ -78,7 +78,7 @@ def test_run_queue_corta_en_pausa(tmp_path):
     ]
     procesados = []
 
-    def download_fn(direct, destino, on_progress, should_pause):
+    def download_fn(direct, destino, on_progress, should_pause, conexiones=None):
         procesados.append(destino)
         return (False, 10, 100, "pausado")
 
@@ -114,7 +114,7 @@ def test_run_queue_saltea_item_quitado(tmp_path):
     items = [a, b]
     procesados = []
 
-    def download_fn(direct, destino, on_progress, should_pause):
+    def download_fn(direct, destino, on_progress, should_pause, conexiones=None):
         procesados.append(destino)
         # simulamos que la GUI quita 'b' mientras se baja 'a'
         if a in items:

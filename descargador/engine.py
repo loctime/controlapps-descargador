@@ -4,12 +4,13 @@ from .resolvers.base import NeedsBrowser
 
 class Engine:
     def __init__(self, get_resolver, download_fn, browser_resolve=None,
-                 on_update=None, should_pause=None):
+                 on_update=None, should_pause=None, get_conexiones=None):
         self.get_resolver = get_resolver
         self.download_fn = download_fn
         self.browser_resolve = browser_resolve
         self.on_update = on_update or (lambda item: None)
         self._should_pause = should_pause or (lambda: False)
+        self._get_conexiones = get_conexiones or (lambda: 1)
 
     def _notify(self, item):
         self.on_update(item)
@@ -41,6 +42,7 @@ class Engine:
                 destino,
                 on_progress=lambda b, t: self._progress(item, b, t),
                 should_pause=self._should_pause,
+                conexiones=self._get_conexiones(),
             )
             item.bytes_bajados = bajado
             item.total = total

@@ -19,16 +19,23 @@ ESTADO = os.path.join(CARPETA_APP, "estado.json")
 CONFIG = os.path.join(CARPETA_APP, "config.json")
 
 
-def _cargar_carpeta_destino():
+CONEXIONES_OPCIONES = ("1", "2", "4", "8")
+CONEXIONES_DEFAULT = 4
+
+
+def _cargar_config():
     if os.path.exists(CONFIG):
-        with open(CONFIG, encoding="utf-8") as f:
-            return json.load(f).get("carpeta", "")
-    return ""
+        try:
+            with open(CONFIG, encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError, ValueError):
+            return {}
+    return {}
 
 
-def _guardar_carpeta_destino(carpeta):
+def _guardar_config(cfg):
     with open(CONFIG, "w", encoding="utf-8") as f:
-        json.dump({"carpeta": carpeta}, f, ensure_ascii=False)
+        json.dump(cfg, f, ensure_ascii=False)
 
 
 class App:
@@ -39,7 +46,9 @@ class App:
 
         self.state = State(ESTADO)
         self.state.load()
-        self.carpeta = _cargar_carpeta_destino()
+        cfg = _cargar_config()
+        self.carpeta = cfg.get("carpeta", "")
+        self.conexiones = cfg.get("conexiones", CONEXIONES_DEFAULT)
         self.cola_ui = queue.Queue()
         self.pausado = threading.Event()  # set = pausado
         self.pausado.set()  # arranca en pausa hasta que el usuario le da play
@@ -51,6 +60,7 @@ class App:
             browser_resolve=resolve_with_browser,
             on_update=lambda item: self.cola_ui.put(item),
             should_pause=lambda: self.pausado.is_set(),
+            get_conexiones=lambda: self.conexiones,
         )
 
         self._construir_ui()
@@ -68,6 +78,12 @@ class App:
         ttk.Button(top, text="Elegir carpeta", command=self._elegir_carpeta).grid(row=1, column=2, pady=4, sticky="w")
         self.lbl_carpeta = ttk.Label(top, text=self.carpeta or "(sin carpeta)")
         self.lbl_carpeta.grid(row=1, column=3, pady=4, sticky="w")
+
+        ttk.Label(top, text="Conexiones por descarga:").grid(row=2, column=0, columnspan=2, pady=4, sticky="w")
+        self.cmb_conex = ttk.Combobox(top, width=4, state="readonly", values=CONEXIONES_OPCIONES)
+        self.cmb_conex.set(str(self.conexiones))
+        self.cmb_conex.grid(row=2, column=1, pady=4, sticky="e")
+        self.cmb_conex.bind("<<ComboboxSelected>>", self._cambiar_conexiones)
 
         cols = ("nombre", "tam", "prog", "estado")
         self.tree = ttk.Treeview(self.root, columns=cols, show="headings", height=12)
@@ -113,8 +129,19 @@ class App:
         c = filedialog.askdirectory()
         if c:
             self.carpeta = c
-            _guardar_carpeta_destino(c)
+            cfg = _cargar_config()
+            cfg["carpeta"] = c
+            _guardar_config(cfg)
             self.lbl_carpeta.config(text=c)
+
+    def _cambiar_conexiones(self, event=None):
+        try:
+            self.conexiones = int(self.cmb_conex.get())
+        except ValueError:
+            self.conexiones = CONEXIONES_DEFAULT
+        cfg = _cargar_config()
+        cfg["conexiones"] = self.conexiones
+        _guardar_config(cfg)
 
     def _toggle_pausa(self):
         if self.pausado.is_set():
