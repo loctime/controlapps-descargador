@@ -60,9 +60,14 @@ class Engine:
             return "error"
 
     def run_queue(self, items):
-        for item in items:
+        # Iteramos sobre una copia para no rompernos si la GUI quita items
+        # de la lista original mientras el worker corre; y salteamos los que
+        # ya fueron quitados.
+        for item in list(items):
             if self._should_pause():
                 return None
+            if item not in items:
+                continue
             if item.estado == "completo":
                 continue
             motivo = self.process_one(item)

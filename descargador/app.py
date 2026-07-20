@@ -76,13 +76,15 @@ class App:
             self.tree.heading(c, text=t)
             self.tree.column(c, width=w)
         self.tree.pack(fill="both", expand=True, padx=8)
+        self.tree.bind("<Delete>", lambda e: self._quitar_seleccionados())
 
         bottom = ttk.Frame(self.root, padding=8)
         bottom.pack(fill="x")
         self.btn_play = ttk.Button(bottom, text="Reanudar", command=self._toggle_pausa)
         self.btn_play.pack(side="left")
         ttk.Button(bottom, text="Reintentar fallidos", command=self._reintentar).pack(side="left", padx=6)
-        ttk.Button(bottom, text="Abrir carpeta", command=self._abrir_carpeta).pack(side="left")
+        ttk.Button(bottom, text="Quitar", command=self._quitar_seleccionados).pack(side="left")
+        ttk.Button(bottom, text="Abrir carpeta", command=self._abrir_carpeta).pack(side="left", padx=6)
 
     def _agregar_links(self, urls):
         if not self.carpeta:
@@ -140,6 +142,26 @@ class App:
     def _aviso_disco_lleno(self):
         self.btn_play.config(text="Reanudar")
         messagebox.showwarning("Disco lleno", "No hay espacio en disco. Libera espacio y despues reanuda.")
+
+    def _quitar_seleccionados(self):
+        sel = self.tree.selection()  # los iid son las urls
+        if not sel:
+            return
+        urls = set(sel)
+        activos = [it.url for it in self.state.items
+                   if it.url in urls and it.estado == "descargando"]
+        if activos:
+            messagebox.showwarning(
+                "Descarga en curso",
+                "Pausa la descarga antes de quitar el archivo que se esta bajando.")
+            urls -= set(activos)  # quitamos el resto igual
+            if not urls:
+                return
+        # Mutamos la lista in place (no reasignar) para que el worker en curso
+        # vea la baja via la referencia que ya tiene.
+        self.state.items[:] = [it for it in self.state.items if it.url not in urls]
+        self.state.save()
+        self._refrescar_tabla()
 
     def _reintentar(self):
         for it in self.state.items:

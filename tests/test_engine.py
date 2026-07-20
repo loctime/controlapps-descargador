@@ -106,3 +106,26 @@ def test_process_one_resolver_explota(tmp_path):
     motivo = eng.process_one(item)
     assert motivo == "error"
     assert item.estado == "fallido"
+
+
+def test_run_queue_saltea_item_quitado(tmp_path):
+    a = Item(url="http://x/a.rar/file", nombre="a.rar", carpeta=str(tmp_path))
+    b = Item(url="http://x/b.rar/file", nombre="b.rar", carpeta=str(tmp_path))
+    items = [a, b]
+    procesados = []
+
+    def download_fn(direct, destino, on_progress, should_pause):
+        procesados.append(destino)
+        # simulamos que la GUI quita 'b' mientras se baja 'a'
+        if a in items:
+            items.remove(b)
+        return (True, 100, 100, "completo")
+
+    eng = Engine(
+        get_resolver=lambda u: ResolverOK(),
+        download_fn=download_fn,
+    )
+    eng.run_queue(items)
+    # solo se proceso 'a'; 'b' fue quitado antes de tocarlo
+    assert len(procesados) == 1
+    assert b.estado == "pendiente"
