@@ -1,3 +1,5 @@
+import os
+
 from descargador.state import State, Item
 
 
@@ -28,3 +30,16 @@ def test_save_y_load_roundtrip(tmp_path):
 def test_load_sin_archivo_devuelve_vacio(tmp_path):
     st = State(str(tmp_path / "no-existe.json"))
     assert st.load() == []
+
+
+def test_load_json_corrupto_no_crashea(tmp_path):
+    ruta = str(tmp_path / "estado.json")
+    with open(ruta, "w", encoding="utf-8") as f:
+        f.write("{ esto no es json")
+
+    st = State(ruta)
+    items = st.load()
+
+    assert items == []
+    assert st.items == []
+    assert os.path.exists(ruta + ".corrupto")
