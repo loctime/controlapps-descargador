@@ -1,4 +1,5 @@
 import os
+import urllib.error
 import urllib.request
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
@@ -15,7 +16,12 @@ def download(direct_url, destino, on_progress=None, should_pause=None, chunk_siz
         headers["Range"] = f"bytes={ya}-"
 
     req = urllib.request.Request(direct_url, headers=headers)
-    resp = urllib.request.urlopen(req, timeout=60)
+    try:
+        resp = urllib.request.urlopen(req, timeout=60)
+    except urllib.error.HTTPError as e:
+        if e.code == 416:  # Range Not Satisfiable -> ya estaba completo
+            return (True, ya, ya, "completo")
+        raise
 
     if resp.status == 206:
         total = int(resp.headers.get("Content-Range", "/0").split("/")[-1] or 0)
