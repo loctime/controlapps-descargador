@@ -89,9 +89,11 @@ class App:
         self.cmb_conex.grid(row=2, column=1, pady=4, sticky="e")
         self.cmb_conex.bind("<<ComboboxSelected>>", self._cambiar_conexiones)
 
-        cols = ("nombre", "tam", "prog", "estado")
-        self.tree = ttk.Treeview(self.root, columns=cols, show="headings", height=12)
-        for c, t, w in (("nombre", "Nombre", 300), ("tam", "Tamaño", 90),
+        cols = ("tam", "prog", "estado")
+        self.tree = ttk.Treeview(self.root, columns=cols, show="tree headings", height=12)
+        self.tree.heading("#0", text="Nombre")
+        self.tree.column("#0", width=300)
+        for c, t, w in (("tam", "Tamaño", 90),
                         ("prog", "Progreso", 200), ("estado", "Estado", 100)):
             self.tree.heading(c, text=t)
             self.tree.column(c, width=w)
@@ -226,8 +228,7 @@ class App:
         vel = self._vel.get(it.url, {}).get("ema") if it.estado == "descargando" else None
         if vel:
             prog += f" · {humano(vel)}/s"
-        return (it.nombre, humano(it.total) if it.total else "?",
-                prog, it.estado)
+        return (humano(it.total) if it.total else "?", prog, it.estado)
 
     def _actualizar_velocidad(self, it):
         if it.estado != "descargando":
@@ -251,11 +252,11 @@ class App:
             completos = sum(1 for it in items if it.estado == "completo")
             tam_grupo = sum(it.total for it in items if it.total)
             texto = f"{key}  ({completos}/{len(items)} completos)"
-            self.tree.insert("", "end", iid=gid,
-                              values=(texto, humano(tam_grupo) if tam_grupo else "?", "", ""),
+            self.tree.insert("", "end", iid=gid, text=texto,
+                              values=(humano(tam_grupo) if tam_grupo else "?", "", ""),
                               open=abiertos.get(gid, self._todo_abierto))
             for it in items:
-                self.tree.insert(gid, "end", iid=it.url, values=self._fila(it))
+                self.tree.insert(gid, "end", iid=it.url, text=it.nombre, values=self._fila(it))
 
     def _drenar_cola(self):
         cambiado = False

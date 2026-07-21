@@ -194,6 +194,8 @@ Expected: FAIL — `AssertionError` (tree is still flat, no `"grp:Juego"` node e
 
 - [ ] **Step 3: Implement the grouped render**
 
+**Addendum (found during manual verification, not caught by the automated tests above):** the original `Treeview` is built with `show="headings"`, which hides column `#0` — the column ttk uses to draw indentation and expand/collapse arrows. With that setting, parent/child nodes exist internally but render as a flat list with no visual nesting. Fix: switch to `show="tree headings"`, move the item's display name into the tree's built-in `text=` (column `#0`) instead of the `values` tuple, and drop `"nombre"` from the `values` columns.
+
 In `descargador/app.py`, change line 14 from:
 
 ```python
@@ -218,6 +220,30 @@ In `__init__`, after line 56 (`self.worker = None`), add:
         self._todo_abierto = True
 ```
 
+In `_construir_ui`, change:
+
+```python
+        cols = ("nombre", "tam", "prog", "estado")
+        self.tree = ttk.Treeview(self.root, columns=cols, show="headings", height=12)
+        for c, t, w in (("nombre", "Nombre", 300), ("tam", "Tamaño", 90),
+                        ("prog", "Progreso", 200), ("estado", "Estado", 100)):
+            self.tree.heading(c, text=t)
+            self.tree.column(c, width=w)
+```
+
+to:
+
+```python
+        cols = ("tam", "prog", "estado")
+        self.tree = ttk.Treeview(self.root, columns=cols, show="tree headings", height=12)
+        self.tree.heading("#0", text="Nombre")
+        self.tree.column("#0", width=300)
+        for c, t, w in (("tam", "Tamaño", 90),
+                        ("prog", "Progreso", 200), ("estado", "Estado", 100)):
+            self.tree.heading(c, text=t)
+            self.tree.column(c, width=w)
+```
+
 Replace the `_fila` method (lines 208-214) with:
 
 ```python
@@ -227,8 +253,7 @@ Replace the `_fila` method (lines 208-214) with:
         vel = self._vel.get(it.url, {}).get("ema") if it.estado == "descargando" else None
         if vel:
             prog += f" · {humano(vel)}/s"
-        return (it.nombre, humano(it.total) if it.total else "?",
-                prog, it.estado)
+        return (humano(it.total) if it.total else "?", prog, it.estado)
 ```
 
 Replace the `_refrescar_tabla` method (lines 230-233) with:
@@ -242,12 +267,14 @@ Replace the `_refrescar_tabla` method (lines 230-233) with:
             completos = sum(1 for it in items if it.estado == "completo")
             tam_grupo = sum(it.total for it in items if it.total)
             texto = f"{key}  ({completos}/{len(items)} completos)"
-            self.tree.insert("", "end", iid=gid,
-                              values=(texto, humano(tam_grupo) if tam_grupo else "?", "", ""),
+            self.tree.insert("", "end", iid=gid, text=texto,
+                              values=(humano(tam_grupo) if tam_grupo else "?", "", ""),
                               open=abiertos.get(gid, self._todo_abierto))
             for it in items:
-                self.tree.insert(gid, "end", iid=it.url, values=self._fila(it))
+                self.tree.insert(gid, "end", iid=it.url, text=it.nombre, values=self._fila(it))
 ```
+
+Item rows' display name now lives in the tree's `text=` (column `#0`), not `values[0]` — tests that assert on a group's label must use `tree.item(gid, "text")`, not `tree.item(gid, "values")[0]`.
 
 - [ ] **Step 4: Run test to verify it passes**
 
