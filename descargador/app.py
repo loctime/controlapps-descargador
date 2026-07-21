@@ -105,6 +105,8 @@ class App:
         ttk.Button(bottom, text="Reintentar fallidos", command=self._reintentar).pack(side="left", padx=6)
         ttk.Button(bottom, text="Quitar", command=self._quitar_seleccionados).pack(side="left")
         ttk.Button(bottom, text="Abrir carpeta", command=self._abrir_carpeta).pack(side="left", padx=6)
+        self.btn_colapsar = ttk.Button(bottom, text="Colapsar todo", command=self._toggle_colapso)
+        self.btn_colapsar.pack(side="left", padx=6)
 
     def _agregar_links(self, urls):
         if not self.carpeta:
@@ -198,6 +200,12 @@ class App:
         self.state.items[:] = [it for it in self.state.items if it.url not in urls]
         self.state.save()
         self._refrescar_tabla()
+
+    def _toggle_colapso(self):
+        self._todo_abierto = not self._todo_abierto
+        for g in self.tree.get_children(""):
+            self.tree.item(g, open=self._todo_abierto)
+        self.btn_colapsar.config(text="Colapsar todo" if self._todo_abierto else "Expandir todo")
 
     def _reintentar(self):
         for it in self.state.items:

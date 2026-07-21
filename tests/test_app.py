@@ -98,3 +98,20 @@ def test_quitar_grupo_con_descarga_activa_preserva_ese_item(app, tmp_path, monke
     app._quitar_seleccionados()
 
     assert {it.url for it in app.state.items} == {"http://x/1"}
+
+
+def test_toggle_colapso_afecta_todos_los_grupos(app, tmp_path):
+    app.state.items = [
+        Item(url="http://x/1", nombre="A.part01.rar", carpeta=str(tmp_path)),
+        Item(url="http://x/2", nombre="B.part01.rar", carpeta=str(tmp_path)),
+    ]
+    app._refrescar_tabla()
+    assert app.btn_colapsar.cget("text") == "Colapsar todo"
+
+    app._toggle_colapso()
+    assert all(not app.tree.item(g, "open") for g in app.tree.get_children(""))
+    assert app.btn_colapsar.cget("text") == "Expandir todo"
+
+    app._toggle_colapso()
+    assert all(app.tree.item(g, "open") for g in app.tree.get_children(""))
+    assert app.btn_colapsar.cget("text") == "Colapsar todo"
