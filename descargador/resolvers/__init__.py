@@ -1,6 +1,7 @@
 from .mediafire import MediaFireResolver
+from .megaup import MegaUpResolver
 
-_RESOLVERS = [MediaFireResolver()]
+_RESOLVERS = [MediaFireResolver(), MegaUpResolver()]
 
 
 def get_resolver(url):
