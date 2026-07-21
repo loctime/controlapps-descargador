@@ -24,3 +24,18 @@ class RootzResolver(Resolver):
 
     def resolve(self, url):
         raise NeedsBrowser(url)
+
+    def extract_from_page(self, page, destino):
+        # Sin captcha ni Cloudflare humano en esta cadena (confirmado en
+        # vivo) - los dos clicks se scriptean de punta a punta.
+        with page.expect_popup(timeout=60000) as popup_info:
+            page.click("text=Download")
+        popup = popup_info.value
+        popup.wait_for_load_state()
+
+        with popup.expect_download(timeout=60000) as download_info:
+            popup.click("text=Download File", timeout=60000)
+        download = download_info.value
+        download.save_as(destino)
+        popup.close()
+        return None
