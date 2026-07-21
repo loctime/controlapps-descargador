@@ -108,6 +108,59 @@ def test_process_one_resolver_explota(tmp_path):
     assert item.estado == "fallido"
 
 
+def test_process_one_failover_primer_mirror_explota_segundo_completa(tmp_path):
+    item = Item(url="http://x/a.rar/file", nombre="a.rar", carpeta=str(tmp_path),
+                mirrors=["http://y/a.rar/file"])
+
+    def get_resolver(url):
+        if url == item.url:
+            raise RuntimeError("boom")
+        return ResolverOK()
+
+    eng = Engine(
+        get_resolver=get_resolver,
+        download_fn=lambda direct, destino, on_progress, should_pause, conexiones=None: (True, 100, 100, "completo"),
+    )
+    motivo = eng.process_one(item)
+    assert motivo == "completo"
+    assert item.estado == "completo"
+
+
+def test_process_one_failover_todos_los_candidatos_fallan(tmp_path):
+    item = Item(url="http://x/a.rar/file", nombre="a.rar", carpeta=str(tmp_path),
+                mirrors=["http://y/a.rar/file"])
+
+    def get_resolver(url):
+        return None if url == item.url else ResolverOK()
+
+    eng = Engine(
+        get_resolver=get_resolver,
+        download_fn=lambda direct, destino, on_progress, should_pause, conexiones=None: (False, 0, 0, "error"),
+    )
+    motivo = eng.process_one(item)
+    assert motivo == "error"
+    assert item.estado == "fallido"
+
+
+def test_process_one_pausado_no_prueba_siguiente_mirror(tmp_path):
+    item = Item(url="http://x/a.rar/file", nombre="a.rar", carpeta=str(tmp_path),
+                mirrors=["http://y/a.rar/file"])
+    intentos = []
+
+    def get_resolver(url):
+        intentos.append(url)
+        return ResolverOK()
+
+    eng = Engine(
+        get_resolver=get_resolver,
+        download_fn=lambda direct, destino, on_progress, should_pause, conexiones=None: (False, 10, 100, "pausado"),
+    )
+    motivo = eng.process_one(item)
+    assert motivo == "pausado"
+    assert item.estado == "pausado"
+    assert intentos == ["http://x/a.rar/file"]
+
+
 def test_run_queue_saltea_item_quitado(tmp_path):
     a = Item(url="http://x/a.rar/file", nombre="a.rar", carpeta=str(tmp_path))
     b = Item(url="http://x/b.rar/file", nombre="b.rar", carpeta=str(tmp_path))
