@@ -39,7 +39,7 @@ def test_refrescar_tabla_agrupa_por_release(app, tmp_path):
     assert app.tree.get_children("") == ("grp:Juego", "grp:Suelto.rar")
     assert app.tree.get_children("grp:Juego") == ("http://x/1", "http://x/2")
     assert app.tree.get_children("grp:Suelto.rar") == ("http://x/3",)
-    assert app.tree.item("grp:Juego", "values")[0] == "Juego  (1/2 completos)"
+    assert app.tree.item("grp:Juego", "text") == "Juego  (1/2 completos)"
 
 
 def test_refrescar_tabla_preserva_colapso_entre_rebuilds(app, tmp_path):
@@ -61,7 +61,7 @@ def test_drenar_cola_actualiza_agregado_del_grupo(app, tmp_path):
                total=100, carpeta=str(tmp_path))
     app.state.items = [it1, it2]
     app._refrescar_tabla()
-    assert app.tree.item("grp:Juego", "values")[0] == "Juego  (0/2 completos)"
+    assert app.tree.item("grp:Juego", "text") == "Juego  (0/2 completos)"
 
     it1.estado = "completo"
     it1.bytes_bajados = 100
@@ -69,7 +69,7 @@ def test_drenar_cola_actualiza_agregado_del_grupo(app, tmp_path):
 
     app._drenar_cola()
 
-    assert app.tree.item("grp:Juego", "values")[0] == "Juego  (1/2 completos)"
+    assert app.tree.item("grp:Juego", "text") == "Juego  (1/2 completos)"
 
 
 def test_quitar_seleccionados_borra_grupo_entero(app, tmp_path):
