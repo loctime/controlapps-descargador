@@ -52,3 +52,21 @@ def test_refrescar_tabla_preserva_colapso_entre_rebuilds(app, tmp_path):
     app._refrescar_tabla()
 
     assert not app.tree.item("grp:Juego", "open")
+
+
+def test_drenar_cola_actualiza_agregado_del_grupo(app, tmp_path):
+    it1 = Item(url="http://x/1", nombre="Juego.part01.rar", estado="descargando",
+               bytes_bajados=0, total=100, carpeta=str(tmp_path))
+    it2 = Item(url="http://x/2", nombre="Juego.part02.rar", estado="pendiente",
+               total=100, carpeta=str(tmp_path))
+    app.state.items = [it1, it2]
+    app._refrescar_tabla()
+    assert app.tree.item("grp:Juego", "values")[0] == "Juego  (0/2 completos)"
+
+    it1.estado = "completo"
+    it1.bytes_bajados = 100
+    app.cola_ui.put(it1)
+
+    app._drenar_cola()
+
+    assert app.tree.item("grp:Juego", "values")[0] == "Juego  (1/2 completos)"

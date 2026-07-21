@@ -249,12 +249,11 @@ class App:
         try:
             while True:
                 it = self.cola_ui.get_nowait()
-                vel = self._actualizar_velocidad(it)
-                if self.tree.exists(it.url):
-                    self.tree.item(it.url, values=self._fila(it, vel))
+                self._actualizar_velocidad(it)
                 cambiado = True
         except queue.Empty:
             pass
         if cambiado:
+            self._refrescar_tabla()
             self.state.save()
         self.root.after(200, self._drenar_cola)
