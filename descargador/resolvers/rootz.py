@@ -25,17 +25,34 @@ class RootzResolver(Resolver):
     def resolve(self, url):
         raise NeedsBrowser(url)
 
+    MAX_INTENTOS = 3
+
     def extract_from_page(self, page, destino):
         # Sin captcha ni Cloudflare humano en esta cadena (confirmado en
-        # vivo) - los dos clicks se scriptean de punta a punta.
-        with page.expect_popup(timeout=60000) as popup_info:
-            page.click("text=Download")
-        popup = popup_info.value
-        popup.wait_for_load_state()
+        # vivo), pero la red de ads rota ofertas: a veces el popup lleva
+        # directo a la pagina real con el boton "Download File", a veces
+        # lleva a algo que no es y hay que cerrar y volver a intentar
+        # (mismo comportamiento que haria una persona a mano).
+        ultimo_error = None
+        for _ in range(self.MAX_INTENTOS):
+            popup = None
+            try:
+                with page.expect_popup(timeout=60000) as popup_info:
+                    page.click("text=Download")
+                popup = popup_info.value
+                popup.wait_for_load_state()
 
-        with popup.expect_download(timeout=60000) as download_info:
-            popup.click("text=Download File", timeout=60000)
-        download = download_info.value
-        download.save_as(destino)
-        popup.close()
-        return None
+                with popup.expect_download(timeout=15000) as download_info:
+                    popup.click("text=Download File", timeout=15000)
+                download = download_info.value
+                download.save_as(destino)
+                popup.close()
+                return None
+            except Exception as e:
+                ultimo_error = e
+                if popup is not None:
+                    try:
+                        popup.close()
+                    except Exception:
+                        pass
+        raise ultimo_error
