@@ -47,6 +47,14 @@ Abre `page_url` (que ya es el link de `download.megaup.net`, no la página del a
 - Si el humano no clickea el checkbox en 5 min, timeout — se trata como candidato fallido (prueba el siguiente mirror si hay, si no `"fallido"`), mismo comportamiento que ya existe hoy con el timeout del captcha de MediaFire.
 - Resolver para `rootz.so` (sub-proyecto 3, spec aparte).
 
+## Limitación descubierta post-implementación (2026-07-21)
+
+El resolver quedó implementado y probado (`resolve()` extrae bien el link real de `download.megaup.net` contra el sitio en vivo). Pero el paso del navegador no funciona en la práctica: `download.megaup.net` corre Cloudflare con detección de automatización activa. Reproducido con Playwright, sin ninguna interacción (ni humana ni scripteada): la página queda en "Un momento…" y se recarga sola cada ~7-30 segundos, indefinidamente — nunca llega a mostrar un checkbox estable que una persona pueda resolver. No es un problema de timing ni de nuestro código; Cloudflare identifica la conexión CDP que usa Playwright y bloquea el challenge en loop, con o sin click humano esperando.
+
+No se va a intentar evadir esa detección (fingerprint spoofing, stealth patches, etc.) — está fuera de lo que este proyecto va a construir, independientemente del uso legítimo de fondo.
+
+**Consecuencia práctica:** los mirrors de `megaup.net` en la cola van a fallar siempre en el paso del navegador (timeout a los 5 min sin evento `download`) y el failover pasa al siguiente candidato — comportamiento correcto y ya cubierto por el diseño de mirrors, solo que este host puntual nunca va a completar. El código queda como está (documentando esto) por si Cloudflare cambia de estrategia en el futuro; no vale la pena invertir más tiempo acá ahora.
+
 ## Testing
 
 - `tests/test_resolvers` (nuevo o extendido, seguir convención de `test_mediafire.py`): `MegaUpResolver.matches()`, `filename()`, `resolve()` extrae el link correcto de un HTML de ejemplo (fixture con el `<script>` real, sin pegar tokens reales de producción) y lanza `NeedsBrowser` con ese link; `resolve()` sobre HTML sin el patrón lanza excepción común (no `NeedsBrowser`).
