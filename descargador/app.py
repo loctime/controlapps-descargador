@@ -2,6 +2,7 @@ import os
 import queue
 import threading
 import json
+import time
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
@@ -11,7 +12,7 @@ from .downloader import download
 from .browser import resolve_with_browser
 from .resolvers import get_resolver
 from .links import parse_links, sort_by_part
-from .format import humano, bar
+from .format import humano, bar, velocidad_ema
 
 CARPETA_APP = os.path.join(os.path.expanduser("~"), ".descargador")
 os.makedirs(CARPETA_APP, exist_ok=True)
@@ -50,6 +51,7 @@ class App:
         self.carpeta = cfg.get("carpeta", "")
         self.conexiones = cfg.get("conexiones", CONEXIONES_DEFAULT)
         self.cola_ui = queue.Queue()
+        self._vel = {}  # url -> {"ts":, "bytes":, "ema":} para velocidad en vivo
         self.pausado = threading.Event()  # set = pausado
         self.pausado.set()  # arranca en pausa hasta que el usuario le da play
         self.worker = None
@@ -203,10 +205,27 @@ class App:
         if self.carpeta and os.path.isdir(self.carpeta):
             os.startfile(self.carpeta)  # Windows
 
-    def _fila(self, it):
+    def _fila(self, it, vel=None):
         pct = int(it.bytes_bajados * 100 / it.total) if it.total else 0
+        prog = f"{bar(pct)} {pct}%"
+        if vel:
+            prog += f" · {humano(vel)}/s"
         return (it.nombre, humano(it.total) if it.total else "?",
-                f"{bar(pct)} {pct}%", it.estado)
+                prog, it.estado)
+
+    def _actualizar_velocidad(self, it):
+        if it.estado != "descargando":
+            self._vel.pop(it.url, None)
+            return None
+        ahora = time.time()
+        prev = self._vel.get(it.url)
+        if prev is None:
+            ema = None
+        else:
+            ema = velocidad_ema(prev["ts"], prev["bytes"], prev["ema"],
+                                 ahora, it.bytes_bajados)
+        self._vel[it.url] = {"ts": ahora, "bytes": it.bytes_bajados, "ema": ema}
+        return ema
 
     def _refrescar_tabla(self):
         self.tree.delete(*self.tree.get_children())
@@ -218,8 +237,9 @@ class App:
         try:
             while True:
                 it = self.cola_ui.get_nowait()
+                vel = self._actualizar_velocidad(it)
                 if self.tree.exists(it.url):
-                    self.tree.item(it.url, values=self._fila(it))
+                    self.tree.item(it.url, values=self._fila(it, vel))
                 cambiado = True
         except queue.Empty:
             pass
