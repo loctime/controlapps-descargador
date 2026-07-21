@@ -175,10 +175,15 @@ class App:
         messagebox.showwarning("Disco lleno", "No hay espacio en disco. Libera espacio y despues reanuda.")
 
     def _quitar_seleccionados(self):
-        sel = self.tree.selection()  # los iid son las urls
+        sel = self.tree.selection()
         if not sel:
             return
-        urls = set(sel)
+        urls = set()
+        for iid in sel:
+            if iid.startswith(GRP_PREFIX):
+                urls.update(self.tree.get_children(iid))
+            else:
+                urls.add(iid)
         activos = [it.url for it in self.state.items
                    if it.url in urls and it.estado == "descargando"]
         if activos:

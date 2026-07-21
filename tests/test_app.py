@@ -70,3 +70,31 @@ def test_drenar_cola_actualiza_agregado_del_grupo(app, tmp_path):
     app._drenar_cola()
 
     assert app.tree.item("grp:Juego", "values")[0] == "Juego  (1/2 completos)"
+
+
+def test_quitar_seleccionados_borra_grupo_entero(app, tmp_path):
+    app.state.items = [
+        Item(url="http://x/1", nombre="Juego.part01.rar", estado="completo", carpeta=str(tmp_path)),
+        Item(url="http://x/2", nombre="Juego.part02.rar", estado="pendiente", carpeta=str(tmp_path)),
+        Item(url="http://x/3", nombre="Otro.rar", estado="pendiente", carpeta=str(tmp_path)),
+    ]
+    app._refrescar_tabla()
+    app.tree.selection_set("grp:Juego")
+
+    app._quitar_seleccionados()
+
+    assert {it.url for it in app.state.items} == {"http://x/3"}
+
+
+def test_quitar_grupo_con_descarga_activa_preserva_ese_item(app, tmp_path, monkeypatch):
+    monkeypatch.setattr(appmod.messagebox, "showwarning", lambda *a, **k: None)
+    app.state.items = [
+        Item(url="http://x/1", nombre="Juego.part01.rar", estado="descargando", carpeta=str(tmp_path)),
+        Item(url="http://x/2", nombre="Juego.part02.rar", estado="pendiente", carpeta=str(tmp_path)),
+    ]
+    app._refrescar_tabla()
+    app.tree.selection_set("grp:Juego")
+
+    app._quitar_seleccionados()
+
+    assert {it.url for it in app.state.items} == {"http://x/1"}
