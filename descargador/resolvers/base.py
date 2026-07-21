@@ -20,6 +20,11 @@ class Resolver:
         """Nombre de archivo destino derivado de la URL de la página."""
         raise NotImplementedError
 
-    def extract_from_page(self, page):
-        """Extrae el link directo desde una página Playwright ya cargada."""
+    def extract_from_page(self, page, destino):
+        """Extrae el link directo desde una pagina Playwright ya cargada.
+
+        Si el resolver necesita bajar el archivo el mismo (por ejemplo,
+        porque las cookies de una verificacion no son reusables via urllib),
+        guarda el archivo en destino y devuelve None en vez de una URL.
+        """
         raise NotImplementedError

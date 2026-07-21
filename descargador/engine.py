@@ -33,12 +33,16 @@ class Engine:
                     continue
                 motivo_final = "error"
 
+                destino = os.path.join(item.carpeta, item.nombre)
                 try:
                     direct = resolver.resolve(candidato)
                 except NeedsBrowser as e:
-                    direct = self.browser_resolve(e.page_url, resolver.extract_from_page)
+                    direct = self.browser_resolve(e.page_url, resolver.extract_from_page, destino)
+                    if direct is None:
+                        item.estado = "completo"
+                        self._notify(item)
+                        return "completo"
 
-                destino = os.path.join(item.carpeta, item.nombre)
                 ok, bajado, total, motivo = self.download_fn(
                     direct,
                     destino,

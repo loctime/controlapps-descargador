@@ -26,7 +26,7 @@ class MediaFireResolver(Resolver):
             raise NeedsBrowser(url)
         return directo
 
-    def extract_from_page(self, page):
+    def extract_from_page(self, page, destino):
         # Tras resolver el captcha, MediaFire muestra el boton con el link directo.
         page.wait_for_selector("a#downloadButton", timeout=300000)
         return page.get_attribute("a#downloadButton", "href")

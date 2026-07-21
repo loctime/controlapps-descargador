@@ -41,8 +41,9 @@ def test_process_one_captcha_usa_browser(tmp_path):
     item = Item(url="http://x/a.rar/file", nombre="a.rar", carpeta=str(tmp_path))
     usados = {}
 
-    def browser_resolve(page_url, extract_from_page):
+    def browser_resolve(page_url, extract_from_page, destino):
         usados["page_url"] = page_url
+        usados["destino"] = destino
         return "http://directo-via-browser/x.rar"
 
     def download_fn(direct, destino, on_progress, should_pause, conexiones=None):
@@ -57,7 +58,30 @@ def test_process_one_captcha_usa_browser(tmp_path):
     motivo = eng.process_one(item)
     assert motivo == "completo"
     assert usados["page_url"] == "http://x/a.rar/file"
+    assert usados["destino"] == str(tmp_path / "a.rar")
     assert usados["direct"] == "http://directo-via-browser/x.rar"
+
+
+def test_process_one_browser_resolve_none_marca_completo_sin_download_fn(tmp_path):
+    item = Item(url="http://x/a.rar/file", nombre="a.rar", carpeta=str(tmp_path))
+    llamadas = {"download_fn": 0}
+
+    def browser_resolve(page_url, extract_from_page, destino):
+        return None
+
+    def download_fn(**k):
+        llamadas["download_fn"] += 1
+        return (True, 1, 1, "completo")
+
+    eng = Engine(
+        get_resolver=lambda u: ResolverCaptcha(),
+        download_fn=download_fn,
+        browser_resolve=browser_resolve,
+    )
+    motivo = eng.process_one(item)
+    assert motivo == "completo"
+    assert item.estado == "completo"
+    assert llamadas["download_fn"] == 0
 
 
 def test_process_one_sin_resolver_falla(tmp_path):
