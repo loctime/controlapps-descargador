@@ -11,7 +11,7 @@ from .engine import Engine
 from .downloader import download
 from .browser import resolve_with_browser
 from .resolvers import get_resolver
-from .links import parse_links, sort_by_part
+from .links import parse_links, sort_by_part, agrupar
 from .format import humano, bar, velocidad_ema
 
 CARPETA_APP = os.path.join(os.path.expanduser("~"), ".descargador")
@@ -22,6 +22,7 @@ CONFIG = os.path.join(CARPETA_APP, "config.json")
 
 CONEXIONES_OPCIONES = ("1", "2", "4", "8")
 CONEXIONES_DEFAULT = 4
+GRP_PREFIX = "grp:"
 
 
 def _cargar_config():
@@ -55,6 +56,7 @@ class App:
         self.pausado = threading.Event()  # set = pausado
         self.pausado.set()  # arranca en pausa hasta que el usuario le da play
         self.worker = None
+        self._todo_abierto = True
 
         self.engine = Engine(
             get_resolver=get_resolver,
@@ -205,9 +207,10 @@ class App:
         if self.carpeta and os.path.isdir(self.carpeta):
             os.startfile(self.carpeta)  # Windows
 
-    def _fila(self, it, vel=None):
+    def _fila(self, it):
         pct = int(it.bytes_bajados * 100 / it.total) if it.total else 0
         prog = f"{bar(pct)} {pct}%"
+        vel = self._vel.get(it.url, {}).get("ema") if it.estado == "descargando" else None
         if vel:
             prog += f" · {humano(vel)}/s"
         return (it.nombre, humano(it.total) if it.total else "?",
@@ -228,9 +231,18 @@ class App:
         return ema
 
     def _refrescar_tabla(self):
+        abiertos = {iid: self.tree.item(iid, "open") for iid in self.tree.get_children("")}
         self.tree.delete(*self.tree.get_children())
-        for it in self.state.items:
-            self.tree.insert("", "end", iid=it.url, values=self._fila(it))
+        for key, items in agrupar(self.state.items):
+            gid = GRP_PREFIX + key
+            completos = sum(1 for it in items if it.estado == "completo")
+            tam_grupo = sum(it.total for it in items if it.total)
+            texto = f"{key}  ({completos}/{len(items)} completos)"
+            self.tree.insert("", "end", iid=gid,
+                              values=(texto, humano(tam_grupo) if tam_grupo else "?", "", ""),
+                              open=abiertos.get(gid, self._todo_abierto))
+            for it in items:
+                self.tree.insert(gid, "end", iid=it.url, values=self._fila(it))
 
     def _drenar_cola(self):
         cambiado = False
