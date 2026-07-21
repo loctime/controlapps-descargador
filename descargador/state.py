@@ -1,7 +1,7 @@
 import os
 import json
 import threading
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 
 
 @dataclass
@@ -12,6 +12,7 @@ class Item:
     bytes_bajados: int = 0
     total: int = 0
     carpeta: str = ""
+    mirrors: list = field(default_factory=list)
 
 
 class State:
@@ -45,8 +46,12 @@ class State:
             os.replace(tmp, self.path)
 
     def add(self, url, nombre, carpeta):
-        if any(i.url == url for i in self.items):
+        if any(url == it.url or url in it.mirrors for it in self.items):
             return None
+        for it in self.items:
+            if it.nombre == nombre and it.carpeta == carpeta:
+                it.mirrors.append(url)
+                return it
         item = Item(url=url, nombre=nombre, carpeta=carpeta)
         self.items.append(item)
         return item
