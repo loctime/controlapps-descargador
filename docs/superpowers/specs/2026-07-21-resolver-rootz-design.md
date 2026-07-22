@@ -44,6 +44,16 @@ Si cualquier paso de la cadena falla (popup no abre, botón no aparece, sin desc
 - Mismas limitaciones que megaup.net: sin resume por Range, sin segmentado, sin progreso en vivo, sin pausa a mitad de descarga (la baja el navegador de punta a punta).
 - No se investiga por qué la red de ads (`b9u4wpt.shop`) usa subdominios random ni qué contienen exactamente los payloads intermedios en base64 — no hace falta, el flujo funciona clickeando los botones visibles, no hace falta decodificar nada a mano.
 
+## Resolver eliminado post-implementación (2026-07-21)
+
+Se implementó, se arregló dos bugs reales encontrados en uso real (selector `text=Download` clickeaba el `<h1>` en vez del botón; segunda página del ad-gate usa `<a>` o `<button>` según el tema, no siempre "Download File" como texto de botón), y con esos fixes el click-chain completo llegó a disparar un evento de descarga real, con bytes reales guardados en disco (~730MB, verificado).
+
+Pero el archivo resultante **no es el contenido real** — es basura que viene de una de las pestañas de ads que abre la cadena (magic bytes de ZIP en vez de RAR, contenido no correspondiente al archivo pedido). Confirmado por el usuario probando en la app real: "termina descargando un archivo basura que es de las pestañas que se abren".
+
+Esto es peor que el caso de megaup.net (que al menos falla honesto: nunca completa, el item queda "fallido" y el failover prueba el siguiente mirror). Acá el resolver reporta `"completo"` con bytes reales en disco que no son el archivo — silenciosamente corrompe la cola con un falso éxito. No es un caso de "intentalo de nuevo" o "ajustá el selector": la cadena de ads en sí misma no es confiable como fuente, sin importar qué tan bien se scriptee el click-through.
+
+**Decisión: se elimina `RootzResolver` de `_RESOLVERS`.** No queda registrado — un mirror de rootz.so vuelve a caer en "sin_resolver" (fallo limpio, failover prueba el siguiente candidato), que es preferible a un "completo" falso. El código se borró del repo (no quedó comentado ni deshabilitado a medias) porque dejarlo ahí sin usarlo es peor que no tenerlo: alguien podría re-registrarlo sin saber de este hallazgo. Si se quiere revisitar en el futuro, este spec documenta por qué no sirvió y qué se probó.
+
 ## Testing
 
 - `tests/test_rootz.py` (nuevo, seguir convención de `test_megaup.py`): `matches()`, `filename()` extrae el `<title>` de un HTML de ejemplo (fixture, sin URLs/tokens reales de producción) y usa el fallback cuando no hay `<title>`, `resolve()` lanza `NeedsBrowser` siempre con la url original como `page_url`.

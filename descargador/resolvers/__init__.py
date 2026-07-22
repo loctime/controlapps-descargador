@@ -1,8 +1,7 @@
 from .mediafire import MediaFireResolver
 from .megaup import MegaUpResolver
-from .rootz import RootzResolver
 
-_RESOLVERS = [MediaFireResolver(), MegaUpResolver(), RootzResolver()]
+_RESOLVERS = [MediaFireResolver(), MegaUpResolver()]
 
 
 def get_resolver(url):
