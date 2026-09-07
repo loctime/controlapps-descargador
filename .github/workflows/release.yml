@@ -21,3 +21,12 @@ jobs:
           (Get-FileHash release\ControlApps-Descargador-Setup.exe -Algorithm SHA256).Hash.ToLower() + '  ControlApps-Descargador-Setup.exe' | Set-Content release\ControlApps-Descargador-Setup.exe.sha256
       - uses: softprops/action-gh-release@v2
         with: {files: 'release/*'}
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg python3-venv
+      - run: bash build_linux.sh
+      - run: sha256sum release/*.AppImage > release/ControlApps-Descargador-x86_64.AppImage.sha256
+      - uses: softprops/action-gh-release@v2
+        with: {files: 'release/*'}
