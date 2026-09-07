@@ -105,17 +105,29 @@ class App:
         self.root.after(200, self._drenar_cola)
 
     def _construir_ui(self):
-        self.root.geometry("960x590")
-        self.root.minsize(820, 480)
+        self.root.geometry("980x640")
+        self.root.minsize(820, 540)
         style = ttk.Style(self.root)
         if "clam" in style.theme_names():
             style.theme_use("clam")
+        style.configure("TFrame", background="#f8fafc")
+        style.configure("TLabel", background="#f8fafc", foreground="#334155", font=("Segoe UI", 9))
         style.configure("Brand.TFrame", background="#0f172a")
         style.configure("BrandTitle.TLabel", background="#0f172a", foreground="#f8fafc",
                         font=("Segoe UI", 16, "bold"))
         style.configure("BrandSub.TLabel", background="#0f172a", foreground="#94a3b8",
                         font=("Segoe UI", 9))
-        style.configure("Brand.TButton", font=("Segoe UI", 9, "bold"))
+        style.configure("Brand.TButton", font=("Segoe UI", 9, "bold"), padding=(9, 5))
+        style.configure("Primary.TButton", background="#2563eb", foreground="#ffffff",
+                        font=("Segoe UI", 10, "bold"), padding=(14, 8))
+        style.map("Primary.TButton", background=[("active", "#1d4ed8")])
+        style.configure("Secondary.TButton", font=("Segoe UI", 9), padding=(8, 5))
+        style.configure("Section.TLabel", foreground="#0f172a", font=("Segoe UI", 12, "bold"))
+        style.configure("Muted.TLabel", foreground="#64748b", font=("Segoe UI", 9))
+        style.configure("Treeview", rowheight=30, background="#ffffff", fieldbackground="#ffffff",
+                        foreground="#334155", font=("Segoe UI", 9))
+        style.configure("Treeview.Heading", background="#e2e8f0", foreground="#475569",
+                        font=("Segoe UI", 9, "bold"), relief="flat")
 
         brand = ttk.Frame(self.root, style="Brand.TFrame", padding=(14, 10))
         brand.pack(fill="x")
@@ -128,13 +140,14 @@ class App:
                    command=lambda: self._buscar_actualizacion(True)).pack(side="right", padx=(0, 6))
         ttk.Button(brand, text="Buscar", style="Brand.TButton", command=self._abrir_buscador).pack(side="right", padx=(0, 6))
 
-        top = ttk.Frame(self.root, padding=8)
+        top = ttk.LabelFrame(self.root, text=" Nueva descarga ", padding=12)
         top.pack(fill="x")
 
         ttk.Label(top, text="Pegá uno o varios enlaces para agregarlos a la cola").grid(
             row=0, column=0, columnspan=5, sticky="w", pady=(0, 4)
         )
-        self.txt = tk.Text(top, height=3, width=70, wrap="word")
+        self.txt = tk.Text(top, height=3, width=70, wrap="word", font=("Segoe UI", 10),
+                           relief="solid", borderwidth=1, highlightthickness=0)
         self.txt.grid(row=1, column=0, columnspan=5, sticky="we")
         self.txt.bind("<Control-Return>", self._atajo_agregar)
         self.cmb_modo = ttk.Combobox(top, state="readonly", width=29,
@@ -143,13 +156,13 @@ class App:
         self.cmb_modo.set(modos.get(self.modo_descarga, "Video completo"))
         self.cmb_modo.grid(row=2, column=5, pady=6, sticky="e")
         self.cmb_modo.bind("<<ComboboxSelected>>", self._cambiar_modo)
-        ttk.Button(top, text="Agregar a la cola", command=self._agregar_pegados).grid(row=2, column=0, pady=6, sticky="w")
-        ttk.Button(top, text="Pegar y agregar", command=self._pegar_y_agregar).grid(row=2, column=1, pady=6, padx=(6, 0), sticky="w")
-        ttk.Button(top, text="Recortar video", command=self._abrir_recorte).grid(row=2, column=2, pady=6, padx=(6, 0), sticky="w")
-        ttk.Button(top, text="Cargar .txt", command=self._cargar_txt).grid(row=2, column=3, pady=6, padx=(6, 0), sticky="w")
-        ttk.Button(top, text="Elegir carpeta", command=self._elegir_carpeta).grid(row=2, column=4, pady=6, padx=(6, 0), sticky="w")
-        self.lbl_carpeta = ttk.Label(top, text=self.carpeta or "(sin carpeta)")
-        self.lbl_carpeta.grid(row=2, column=6, pady=6, padx=(8, 0), sticky="w")
+        ttk.Button(top, text="Descargar", style="Primary.TButton", command=self._agregar_pegados).grid(row=2, column=0, pady=8, sticky="w")
+        ttk.Button(top, text="Pegar enlace", style="Secondary.TButton", command=self._pegar_y_agregar).grid(row=2, column=1, pady=8, padx=(7, 0), sticky="w")
+        ttk.Button(top, text="Recortar", style="Secondary.TButton", command=self._abrir_recorte).grid(row=2, column=2, pady=8, padx=(7, 0), sticky="w")
+        ttk.Button(top, text="Lista .txt", style="Secondary.TButton", command=self._cargar_txt).grid(row=2, column=3, pady=8, padx=(7, 0), sticky="w")
+        ttk.Button(top, text="Carpeta", style="Secondary.TButton", command=self._elegir_carpeta).grid(row=2, column=4, pady=8, padx=(7, 0), sticky="w")
+        self.lbl_carpeta = ttk.Label(top, text=self.carpeta or "Elegí una carpeta destino", style="Muted.TLabel")
+        self.lbl_carpeta.grid(row=2, column=6, pady=8, padx=(8, 0), sticky="w")
 
         ttk.Label(top, text="Conexiones por descarga:").grid(row=3, column=0, columnspan=2, pady=(0, 2), sticky="w")
         self.cmb_conex = ttk.Combobox(top, width=4, state="readonly", values=CONEXIONES_OPCIONES)
@@ -161,6 +174,14 @@ class App:
         )
         top.columnconfigure(4, weight=1)
         self.root.after(1500, self._buscar_actualizacion)
+
+        encabezado_cola = ttk.Frame(self.root, padding=(12, 11, 12, 5))
+        encabezado_cola.pack(fill="x")
+        ttk.Label(encabezado_cola, text="Cola de descargas", style="Section.TLabel").pack(side="left")
+        ttk.Label(encabezado_cola, text="Click derecho para mas acciones", style="Muted.TLabel").pack(
+            side="left", padx=(10, 0), pady=(3, 0))
+        ttk.Button(encabezado_cola, text="Limpiar completas", style="Secondary.TButton",
+                   command=self._limpiar_completos).pack(side="right")
 
         cols = ("tam", "prog", "estado")
         self.tree = ttk.Treeview(self.root, columns=cols, show="tree headings", height=14)
@@ -187,16 +208,16 @@ class App:
         self.menu.add_separator()
         self.menu.add_command(label="Quitar de la cola", command=self._quitar_seleccionados)
 
-        bottom = ttk.Frame(self.root, padding=8)
+        bottom = ttk.Frame(self.root, padding=(12, 10))
         bottom.pack(fill="x")
-        self.btn_play = ttk.Button(bottom, text="Reanudar", command=self._toggle_pausa)
+        self.btn_play = ttk.Button(bottom, text="Reanudar descargas", style="Primary.TButton", command=self._toggle_pausa)
         self.btn_play.grid(row=0, column=0, sticky="w")
-        ttk.Button(bottom, text="Reintentar fallidos", command=self._reintentar).grid(row=0, column=1, padx=(6, 0), sticky="w")
+        ttk.Button(bottom, text="Reintentar fallidas", style="Secondary.TButton", command=self._reintentar).grid(row=0, column=1, padx=(7, 0), sticky="w")
         ttk.Button(bottom, text="Reintentar selección", command=self._reintentar_seleccionados).grid(row=0, column=2, padx=(6, 0), sticky="w")
-        ttk.Button(bottom, text="Quitar", command=self._quitar_seleccionados).grid(row=0, column=3, padx=(6, 0), sticky="w")
-        ttk.Button(bottom, text="Limpiar completos", command=self._limpiar_completos).grid(row=0, column=4, padx=(6, 0), sticky="w")
-        ttk.Button(bottom, text="Abrir archivo", command=self._abrir_seleccionado).grid(row=0, column=5, padx=(6, 0), sticky="w")
-        ttk.Button(bottom, text="Abrir carpeta", command=self._abrir_carpeta).grid(row=0, column=6, padx=(6, 0), sticky="w")
+        ttk.Button(bottom, text="Quitar", style="Secondary.TButton", command=self._quitar_seleccionados).grid(row=0, column=3, padx=(7, 0), sticky="w")
+        ttk.Button(bottom, text="Limpiar", style="Secondary.TButton", command=self._limpiar_completos).grid(row=0, column=4, padx=(7, 0), sticky="w")
+        ttk.Button(bottom, text="Abrir archivo", style="Secondary.TButton", command=self._abrir_seleccionado).grid(row=0, column=5, padx=(7, 0), sticky="w")
+        ttk.Button(bottom, text="Abrir carpeta", style="Secondary.TButton", command=self._abrir_carpeta).grid(row=0, column=6, padx=(7, 0), sticky="w")
         self.btn_colapsar = ttk.Button(bottom, text="Colapsar todo", command=self._toggle_colapso)
         self.btn_colapsar.grid(row=0, column=7, padx=(6, 0), sticky="w")
         ttk.Button(bottom, text="Seleccionar todo", command=self._seleccionar_todo).grid(row=0, column=8, padx=(6, 0), sticky="w")
@@ -506,6 +527,7 @@ class App:
         conexiones = tk.StringVar(value=str(self.conexiones))
         auto_iniciar = tk.BooleanVar(value=self.auto_iniciar)
         abrir_al_finalizar = tk.BooleanVar(value=self.abrir_al_finalizar)
+        actualizar_automaticamente = tk.BooleanVar(value=self.actualizar_automaticamente)
 
         ttk.Label(frame, text="Carpeta predeterminada").grid(row=1, column=0, sticky="w")
         ttk.Entry(frame, textvariable=carpeta, width=48).grid(row=2, column=0, columnspan=2, pady=(3, 10), sticky="we")
@@ -523,8 +545,10 @@ class App:
                         variable=auto_iniciar).grid(row=4, column=0, columnspan=3, pady=(14, 2), sticky="w")
         ttk.Checkbutton(frame, text="Abrir la carpeta cuando termina toda la cola",
                         variable=abrir_al_finalizar).grid(row=5, column=0, columnspan=3, pady=2, sticky="w")
+        ttk.Checkbutton(frame, text="Buscar e instalar actualizaciones automaticamente",
+                        variable=actualizar_automaticamente).grid(row=6, column=0, columnspan=3, pady=2, sticky="w")
         ttk.Label(frame, text="Las preferencias se guardan solo en esta PC.").grid(
-            row=6, column=0, columnspan=3, pady=(10, 14), sticky="w"
+            row=7, column=0, columnspan=3, pady=(10, 14), sticky="w"
         )
 
         def guardar():
@@ -536,13 +560,14 @@ class App:
             self.conexiones = conexiones_num
             self.auto_iniciar = auto_iniciar.get()
             self.abrir_al_finalizar = abrir_al_finalizar.get()
+            self.actualizar_automaticamente = actualizar_automaticamente.get()
             self.cmb_conex.set(str(self.conexiones))
             self.lbl_carpeta.config(text=self.carpeta or "(sin carpeta)")
             self._guardar_preferencias()
             ventana.destroy()
 
         acciones = ttk.Frame(frame)
-        acciones.grid(row=7, column=0, columnspan=3, sticky="e")
+        acciones.grid(row=8, column=0, columnspan=3, sticky="e")
         ttk.Button(acciones, text="Cancelar", command=ventana.destroy).pack(side="right")
         ttk.Button(acciones, text="Guardar preferencias", command=guardar).pack(side="right", padx=(0, 6))
 
@@ -553,7 +578,7 @@ class App:
             self._arrancar_worker()
         else:
             self.pausado.set()
-            self.btn_play.config(text="Reanudar")
+            self.btn_play.config(text="Reanudar descargas")
 
     def _arrancar_worker(self):
         if self.worker and self.worker.is_alive():
@@ -574,7 +599,7 @@ class App:
         self.worker.start()
 
     def _aviso_disco_lleno(self):
-        self.btn_play.config(text="Reanudar")
+        self.btn_play.config(text="Reanudar descargas")
         messagebox.showwarning("Disco lleno", "No hay espacio en disco. Libera espacio y despues reanuda.")
 
     def _quitar_seleccionados(self):
