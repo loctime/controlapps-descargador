@@ -17,6 +17,7 @@ from .format import humano, bar, velocidad_ema
 from .system import abrir_ruta
 from .updater import aplicar_actualizacion, buscar_actualizacion, descargar_actualizacion
 from .version import APP_VERSION
+from .search import buscar_youtube
 
 CARPETA_APP = os.path.join(os.path.expanduser("~"), ".descargador")
 os.makedirs(CARPETA_APP, exist_ok=True)
@@ -125,6 +126,7 @@ class App:
                    command=self._abrir_configuracion).pack(side="right")
         ttk.Button(brand, text="Actualizar", style="Brand.TButton",
                    command=lambda: self._buscar_actualizacion(True)).pack(side="right", padx=(0, 6))
+        ttk.Button(brand, text="Buscar", style="Brand.TButton", command=self._abrir_buscador).pack(side="right", padx=(0, 6))
 
         top = ttk.Frame(self.root, padding=8)
         top.pack(fill="x")
@@ -242,6 +244,49 @@ class App:
             messagebox.showinfo("Sin enlaces", "El portapapeles no contiene enlaces HTTP validos.")
             return
         self._agregar_links(urls)
+
+    def _abrir_buscador(self):
+        win = tk.Toplevel(self.root)
+        win.title("ControlApps · Buscar en YouTube")
+        win.geometry("720x430")
+        frame = ttk.Frame(win, padding=14); frame.pack(fill="both", expand=True)
+        ttk.Label(frame, text="Buscar en YouTube", font=("Segoe UI", 12, "bold")).pack(anchor="w")
+        ttk.Label(frame, text="Resultados directos para descargar. Proximamente: TikTok y busqueda web.").pack(anchor="w", pady=(2, 8))
+        consulta = tk.StringVar(); entrada = ttk.Entry(frame, textvariable=consulta)
+        entrada.pack(fill="x"); entrada.focus_set()
+        tree = ttk.Treeview(frame, columns=("canal", "duracion"), show="tree headings", height=12)
+        tree.heading("#0", text="Titulo"); tree.heading("canal", text="Canal"); tree.heading("duracion", text="Duracion")
+        tree.column("#0", width=420); tree.column("canal", width=180); tree.column("duracion", width=80)
+        tree.pack(fill="both", expand=True, pady=10)
+        resultados = []
+        estado = ttk.Label(frame, text="Escribi una busqueda y presiona Enter."); estado.pack(anchor="w")
+
+        def ejecutar(event=None):
+            estado.config(text="Buscando..."); tree.delete(*tree.get_children())
+            def trabajo():
+                try:
+                    encontrados = buscar_youtube(consulta.get().strip())
+                    self.root.after(0, lambda: mostrar(encontrados))
+                except Exception:
+                    self.root.after(0, lambda: estado.config(text="No se pudo buscar en YouTube."))
+            threading.Thread(target=trabajo, daemon=True).start()
+
+        def mostrar(encontrados):
+            nonlocal resultados; resultados = encontrados
+            for i, item in enumerate(resultados):
+                tree.insert("", "end", iid=str(i), text=item["title"], values=(item["channel"], _tiempo_humano(item["duration"])))
+            estado.config(text=f"{len(resultados)} resultados. Selecciona uno para agregarlo.")
+
+        def agregar():
+            seleccion = tree.selection()
+            if seleccion:
+                self._agregar_links([resultados[int(seleccion[0])]["url"]])
+                estado.config(text="Agregado a la cola.")
+
+        entrada.bind("<Return>", ejecutar)
+        acciones = ttk.Frame(frame); acciones.pack(fill="x", pady=(8, 0))
+        ttk.Button(acciones, text="Buscar", command=ejecutar).pack(side="left")
+        ttk.Button(acciones, text="Agregar a la cola", command=agregar).pack(side="right")
 
     def _url_para_recortar(self):
         urls = parse_links(self.txt.get("1.0", "end"))
