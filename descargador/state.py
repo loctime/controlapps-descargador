@@ -13,6 +13,7 @@ class Item:
     total: int = 0
     carpeta: str = ""
     mirrors: list = field(default_factory=list)
+    clip: dict = field(default_factory=dict)
 
 
 class State:
@@ -45,13 +46,14 @@ class State:
                 json.dump([asdict(i) for i in self.items], f, ensure_ascii=False, indent=2)
             os.replace(tmp, self.path)
 
-    def add(self, url, nombre, carpeta):
-        if any(url == it.url or url in it.mirrors for it in self.items):
+    def add(self, url, nombre, carpeta, clip=None):
+        clip = clip or {}
+        if any((url == it.url or url in it.mirrors) and clip == it.clip for it in self.items):
             return None
         for it in self.items:
-            if it.nombre == nombre and it.carpeta == carpeta:
+            if it.nombre == nombre and it.carpeta == carpeta and clip == it.clip:
                 it.mirrors.append(url)
                 return it
-        item = Item(url=url, nombre=nombre, carpeta=carpeta)
+        item = Item(url=url, nombre=nombre, carpeta=carpeta, clip=clip)
         self.items.append(item)
         return item

@@ -34,6 +34,29 @@ class Engine:
                 motivo_final = "error"
 
                 destino = os.path.join(item.carpeta, item.nombre)
+                descarga_propia = getattr(resolver, "download", None)
+                if callable(descarga_propia):
+                    resultado = descarga_propia(
+                        candidato,
+                        destino,
+                        on_progress=lambda b, t: self._progress(item, b, t),
+                        should_pause=self._should_pause,
+                        clip=item.clip,
+                    )
+                    ok, bajado, total, motivo, nombre_final = resultado
+                    item.bytes_bajados = bajado
+                    item.total = total
+                    if nombre_final:
+                        item.nombre = nombre_final
+                    if motivo == "completo":
+                        item.estado = "completo"
+                        self._notify(item)
+                        return motivo
+                    if motivo in ("pausado", "disco_lleno"):
+                        item.estado = "pausado"
+                        self._notify(item)
+                        return motivo
+                    continue
                 try:
                     direct = resolver.resolve(candidato)
                 except NeedsBrowser as e:

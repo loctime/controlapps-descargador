@@ -1,0 +1,23 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.13'}
+      - run: pip install -r requirements.txt pyinstaller
+      - run: choco install ffmpeg innosetup -y
+      - shell: pwsh
+        run: |
+          $ff=(Get-Command ffmpeg).Source; $fp=$ff -replace 'ffmpeg.exe$','ffprobe.exe'
+          pyinstaller --noconfirm --clean --windowed --name 'ControlApps Descargador' --collect-all yt_dlp --add-binary "$ff;." --add-binary "$fp;." run.py
+          iscc installer\ControlAppsDescargador.iss
+          (Get-FileHash release\ControlApps-Descargador-Setup.exe -Algorithm SHA256).Hash.ToLower() + '  ControlApps-Descargador-Setup.exe' | Set-Content release\ControlApps-Descargador-Setup.exe.sha256
+      - uses: softprops/action-gh-release@v2
+        with: {files: 'release/*'}

@@ -3,3 +3,10 @@ __pycache__/
 estado.json
 *.rar
 .superpowers/
+build/
+dist/
+release/
+*.spec
+.build-venv/
+.tools/
+AppDir/

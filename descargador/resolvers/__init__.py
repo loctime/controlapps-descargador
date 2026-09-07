@@ -1,7 +1,9 @@
 from .mediafire import MediaFireResolver
 from .megaup import MegaUpResolver
+from .instagram import InstagramResolver
+from .youtube import YouTubeResolver
 
-_RESOLVERS = [MediaFireResolver(), MegaUpResolver()]
+_RESOLVERS = [InstagramResolver(), YouTubeResolver(), MediaFireResolver(), MegaUpResolver()]
 
 
 def get_resolver(url):

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=ControlApps Descargador
+Comment=Descargas de archivos, YouTube e Instagram
+Exec=ControlApps Descargador
+Icon=controlapps-descargador
+Terminal=false
+Categories=Network;Utility;

@@ -115,3 +115,53 @@ def test_toggle_colapso_afecta_todos_los_grupos(app, tmp_path):
     app._toggle_colapso()
     assert all(app.tree.item(g, "open") for g in app.tree.get_children(""))
     assert app.btn_colapsar.cget("text") == "Colapsar todo"
+
+
+def test_reintentar_seleccionados_solo_reactiva_pausados_y_fallidos(app, tmp_path):
+    app.state.items = [
+        Item(url="http://x/1", nombre="uno.rar", estado="fallido", carpeta=str(tmp_path)),
+        Item(url="http://x/2", nombre="dos.rar", estado="completo", carpeta=str(tmp_path)),
+    ]
+    app._refrescar_tabla()
+    app.tree.selection_set(("http://x/1", "http://x/2"))
+
+    app._reintentar_seleccionados()
+
+    assert app.state.items[0].estado == "pendiente"
+    assert app.state.items[1].estado == "completo"
+
+
+def test_resumen_muestra_progreso_global(app, tmp_path):
+    app.state.items = [
+        Item(url="http://x/1", nombre="uno.rar", estado="completo", bytes_bajados=100, total=100, carpeta=str(tmp_path)),
+        Item(url="http://x/2", nombre="dos.rar", estado="pendiente", bytes_bajados=0, total=100, carpeta=str(tmp_path)),
+    ]
+
+    app._refrescar_tabla()
+
+    assert "1 completas" in app.lbl_resumen.cget("text")
+    assert app.progreso_global["value"] == 50
+
+
+def test_agregar_con_auto_inicio_reanuda_worker(app, tmp_path, monkeypatch):
+    app.carpeta = str(tmp_path)
+    app.auto_iniciar = True
+    arrancar = []
+    monkeypatch.setattr(app, "_arrancar_worker", lambda: arrancar.append(True))
+
+    app._agregar_links(["https://www.instagram.com/reel/DGBd7s-pnRp/"])
+
+    assert len(app.state.items) == 1
+    assert not app.pausado.is_set()
+    assert arrancar == [True]
+
+
+def test_tiempo_segundos_acepta_formatos_comunes():
+    assert appmod._tiempo_segundos("75") == 75
+    assert appmod._tiempo_segundos("01:15") == 75
+    assert appmod._tiempo_segundos("01:01:15") == 3675
+
+
+def test_tiempo_humano_formatea_con_y_sin_horas():
+    assert appmod._tiempo_humano(75) == "01:15"
+    assert appmod._tiempo_humano(3675) == "01:01:15"

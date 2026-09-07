@@ -28,3 +28,7 @@ class Resolver:
         guarda el archivo en destino y devuelve None en vez de una URL.
         """
         raise NotImplementedError
+
+    # Los resolvers comunes devuelven una URL directa y usan downloader.py.
+    # Los que necesitan una herramienta propia (por ejemplo Instagram, que
+    # puede entregar video y audio por separado) pueden implementar download.

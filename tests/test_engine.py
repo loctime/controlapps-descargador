@@ -25,6 +25,18 @@ class ResolverCaptcha(Resolver):
         return "no-usado"
 
 
+class ResolverConDescargaPropia(Resolver):
+    def matches(self, url):
+        return True
+
+    def filename(self, url):
+        return "instagram_id"
+
+    def download(self, url, destino, on_progress, should_pause, clip=None):
+        on_progress(20, 20)
+        return True, 20, 20, "completo", "instagram_id.mp4"
+
+
 def test_process_one_completo(tmp_path):
     item = Item(url="http://x/a.rar/file", nombre="a.rar", carpeta=str(tmp_path))
     eng = Engine(
@@ -35,6 +47,22 @@ def test_process_one_completo(tmp_path):
     assert motivo == "completo"
     assert item.estado == "completo"
     assert item.bytes_bajados == 100
+
+
+def test_process_one_resolver_con_descarga_propia(tmp_path):
+    item = Item(url="https://instagram.com/reel/id/", nombre="instagram_id", carpeta=str(tmp_path))
+    llamadas = {"download_fn": 0}
+    eng = Engine(
+        get_resolver=lambda u: ResolverConDescargaPropia(),
+        download_fn=lambda **k: llamadas.__setitem__("download_fn", llamadas["download_fn"] + 1),
+    )
+
+    motivo = eng.process_one(item)
+
+    assert motivo == "completo"
+    assert item.estado == "completo"
+    assert item.nombre == "instagram_id.mp4"
+    assert llamadas["download_fn"] == 0
 
 
 def test_process_one_captcha_usa_browser(tmp_path):
