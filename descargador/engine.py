@@ -42,6 +42,7 @@ class Engine:
                         on_progress=lambda b, t: self._progress(item, b, t),
                         should_pause=self._should_pause,
                         clip=item.clip,
+                        audio_format=item.audio_format,
                     )
                     ok, bajado, total, motivo, nombre_final = resultado
                     item.bytes_bajados = bajado

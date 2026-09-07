@@ -32,7 +32,7 @@ class ResolverConDescargaPropia(Resolver):
     def filename(self, url):
         return "instagram_id"
 
-    def download(self, url, destino, on_progress, should_pause, clip=None):
+    def download(self, url, destino, on_progress, should_pause, clip=None, audio_format=""):
         on_progress(20, 20)
         return True, 20, 20, "completo", "instagram_id.mp4"
 

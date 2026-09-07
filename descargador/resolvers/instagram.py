@@ -38,7 +38,7 @@ class InstagramResolver(Resolver):
     def resolve(self, url):
         raise NotImplementedError("Instagram se descarga con yt-dlp")
 
-    def download(self, url, destino, on_progress=None, should_pause=None, clip=None):
+    def download(self, url, destino, on_progress=None, should_pause=None, clip=None, audio_format=""):
         """Devuelve (ok, bajado, total, motivo, nombre_final)."""
         try:
             import yt_dlp
@@ -68,6 +68,13 @@ class InstagramResolver(Resolver):
             "progress_hooks": [hook],
             "windowsfilenames": True,
         }
+        if audio_format:
+            opciones["format"] = "bestaudio/best"
+            opciones.pop("merge_output_format", None)
+            if audio_format == "mp3":
+                opciones["postprocessors"] = [{
+                    "key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "320",
+                }]
         if clip:
             inicio, fin = clip["inicio"], clip["fin"]
 

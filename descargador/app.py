@@ -81,6 +81,7 @@ class App:
         self.auto_iniciar = cfg.get("auto_iniciar", False)
         self.abrir_al_finalizar = cfg.get("abrir_al_finalizar", False)
         self.actualizar_automaticamente = cfg.get("actualizar_automaticamente", True)
+        self.modo_descarga = cfg.get("modo_descarga", "video")
         self._buscando_actualizacion = False
         self.cola_ui = queue.Queue()
         self._vel = {}  # url -> {"ts":, "bytes":, "ema":} para velocidad en vivo
@@ -134,21 +135,27 @@ class App:
         self.txt = tk.Text(top, height=3, width=70, wrap="word")
         self.txt.grid(row=1, column=0, columnspan=5, sticky="we")
         self.txt.bind("<Control-Return>", self._atajo_agregar)
+        self.cmb_modo = ttk.Combobox(top, state="readonly", width=29,
+            values=("Video completo", "Audio original (recomendado)", "MP3 320 kbps"))
+        modos = {"video": "Video completo", "original": "Audio original (recomendado)", "mp3": "MP3 320 kbps"}
+        self.cmb_modo.set(modos.get(self.modo_descarga, "Video completo"))
+        self.cmb_modo.grid(row=2, column=5, pady=6, sticky="e")
+        self.cmb_modo.bind("<<ComboboxSelected>>", self._cambiar_modo)
         ttk.Button(top, text="Agregar a la cola", command=self._agregar_pegados).grid(row=2, column=0, pady=6, sticky="w")
         ttk.Button(top, text="Pegar y agregar", command=self._pegar_y_agregar).grid(row=2, column=1, pady=6, padx=(6, 0), sticky="w")
         ttk.Button(top, text="Recortar video", command=self._abrir_recorte).grid(row=2, column=2, pady=6, padx=(6, 0), sticky="w")
         ttk.Button(top, text="Cargar .txt", command=self._cargar_txt).grid(row=2, column=3, pady=6, padx=(6, 0), sticky="w")
         ttk.Button(top, text="Elegir carpeta", command=self._elegir_carpeta).grid(row=2, column=4, pady=6, padx=(6, 0), sticky="w")
         self.lbl_carpeta = ttk.Label(top, text=self.carpeta or "(sin carpeta)")
-        self.lbl_carpeta.grid(row=2, column=5, pady=6, padx=(8, 0), sticky="w")
+        self.lbl_carpeta.grid(row=2, column=6, pady=6, padx=(8, 0), sticky="w")
 
         ttk.Label(top, text="Conexiones por descarga:").grid(row=3, column=0, columnspan=2, pady=(0, 2), sticky="w")
         self.cmb_conex = ttk.Combobox(top, width=4, state="readonly", values=CONEXIONES_OPCIONES)
         self.cmb_conex.set(str(self.conexiones))
         self.cmb_conex.grid(row=3, column=1, pady=(0, 2), sticky="e")
         self.cmb_conex.bind("<<ComboboxSelected>>", self._cambiar_conexiones)
-        ttk.Label(top, text="Atajo: Ctrl + Enter agrega los enlaces escritos.").grid(
-            row=3, column=2, columnspan=3, padx=(12, 0), sticky="w"
+        ttk.Label(top, text="Audio original conserva la mejor calidad real de YouTube; MP3 320 prioriza compatibilidad.").grid(
+            row=3, column=2, columnspan=4, padx=(12, 0), sticky="w"
         )
         top.columnconfigure(4, weight=1)
         self.root.after(1500, self._buscar_actualizacion)
@@ -206,7 +213,7 @@ class App:
         for url in sort_by_part(urls):
             r = get_resolver(url)
             nombre = r.filename(url) if r else url.rstrip("/").split("/")[-1]
-            if self.state.add(url, nombre, self.carpeta):
+            if self.state.add(url, nombre, self.carpeta, audio_format="" if self.modo_descarga == "video" else self.modo_descarga):
                 agregados += 1
         self.state.save()
         self._refrescar_tabla()
@@ -382,6 +389,11 @@ class App:
             self.conexiones = CONEXIONES_DEFAULT
         self._guardar_preferencias()
 
+    def _cambiar_modo(self, event=None):
+        texto = self.cmb_modo.get()
+        self.modo_descarga = "original" if texto.startswith("Audio original") else "mp3" if texto.startswith("MP3") else "video"
+        self._guardar_preferencias()
+
     def _guardar_preferencias(self):
         _guardar_config({
             "carpeta": self.carpeta,
@@ -389,6 +401,7 @@ class App:
             "auto_iniciar": self.auto_iniciar,
             "abrir_al_finalizar": self.abrir_al_finalizar,
             "actualizar_automaticamente": self.actualizar_automaticamente,
+            "modo_descarga": self.modo_descarga,
         })
 
     def _buscar_actualizacion(self, manual=False):
@@ -658,6 +671,10 @@ class App:
                               open=abiertos.get(gid, self._todo_abierto))
             for it in items:
                 nombre = it.nombre
+                if it.audio_format == "original":
+                    nombre += "  [audio original]"
+                elif it.audio_format == "mp3":
+                    nombre += "  [MP3 320]"
                 if it.clip:
                     nombre += f"  [{_tiempo_humano(it.clip['inicio'])} - {_tiempo_humano(it.clip['fin'])}]"
                 self.tree.insert(gid, "end", iid=self._iid_item(it), text=nombre,

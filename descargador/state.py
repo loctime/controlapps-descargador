@@ -14,6 +14,7 @@ class Item:
     carpeta: str = ""
     mirrors: list = field(default_factory=list)
     clip: dict = field(default_factory=dict)
+    audio_format: str = ""
 
 
 class State:
@@ -46,14 +47,14 @@ class State:
                 json.dump([asdict(i) for i in self.items], f, ensure_ascii=False, indent=2)
             os.replace(tmp, self.path)
 
-    def add(self, url, nombre, carpeta, clip=None):
+    def add(self, url, nombre, carpeta, clip=None, audio_format=""):
         clip = clip or {}
-        if any((url == it.url or url in it.mirrors) and clip == it.clip for it in self.items):
+        if any((url == it.url or url in it.mirrors) and clip == it.clip and audio_format == it.audio_format for it in self.items):
             return None
         for it in self.items:
-            if it.nombre == nombre and it.carpeta == carpeta and clip == it.clip:
+            if it.nombre == nombre and it.carpeta == carpeta and clip == it.clip and audio_format == it.audio_format:
                 it.mirrors.append(url)
                 return it
-        item = Item(url=url, nombre=nombre, carpeta=carpeta, clip=clip)
+        item = Item(url=url, nombre=nombre, carpeta=carpeta, clip=clip, audio_format=audio_format)
         self.items.append(item)
         return item
