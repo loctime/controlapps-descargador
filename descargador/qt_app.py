@@ -8,10 +8,11 @@ import sys
 import subprocess
 import tempfile
 import threading
+import urllib.request
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QTimer, Qt, QUrl, Signal
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QPixmap
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import (
@@ -55,6 +56,7 @@ class Signals(QObject):
     error = Signal(str)
     search_ready = Signal(list)
     progress = Signal(str)
+    thumbnail = Signal(str)
 
 
 class CropPage(QWidget):
@@ -78,31 +80,35 @@ class CropPage(QWidget):
         self.player.durationChanged.connect(self._duration_changed)
         self._build()
         self.signals.progress.connect(self.status.setText)
+        self.signals.thumbnail.connect(self._thumbnail_ready)
 
     def _build(self):
-        layout = QVBoxLayout(self)
-        top = QHBoxLayout()
-        back = QPushButton("← Volver a descargas")
-        back.clicked.connect(self.window.show_queue)
-        top.addWidget(back)
-        title = QLabel("Recortar video")
-        title.setObjectName("pageTitle")
-        top.addWidget(title); top.addStretch()
-        layout.addLayout(top)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 8, 0, 4)
+        left = QVBoxLayout()
         self.status = QLabel("Preparando previsualizacion...")
         self.status.setObjectName("muted")
-        layout.addWidget(self.status)
         self.video = QVideoWidget()
-        self.video.setMinimumHeight(360)
+        self.video.setMinimumSize(280, 158)
+        self.video.setMaximumSize(300, 170)
         self.video.setStyleSheet("background:#000; border-radius:8px;")
         self.player.setVideoOutput(self.video)
-        layout.addWidget(self.video, 1)
+        self.cover = QLabel("Miniatura del video")
+        self.cover.setAlignment(Qt.AlignCenter)
+        self.cover.setMinimumSize(280, 158); self.cover.setMaximumSize(300, 170)
+        self.cover.setStyleSheet("background:#e2e8f0; color:#64748b; border-radius:8px;")
+        left.addWidget(self.cover)
+        self.video.hide()
+        left.addWidget(self.video)
+        layout.addLayout(left)
+        right = QVBoxLayout()
+        right.addWidget(self.status)
         self.playhead = QSlider(Qt.Horizontal)
         self.playhead.setEnabled(False)
         self.playhead.sliderMoved.connect(self.player.setPosition)
-        layout.addWidget(self.playhead)
-        self.start, self.start_text = self._range_row(layout, "Inicio")
-        self.end, self.end_text = self._range_row(layout, "Fin")
+        right.addWidget(self.playhead)
+        self.start, self.start_text = self._range_row(right, "Inicio")
+        self.end, self.end_text = self._range_row(right, "Fin")
         self.start.valueChanged.connect(self._start_changed)
         self.end.valueChanged.connect(self._end_changed)
         actions = QHBoxLayout()
@@ -114,7 +120,8 @@ class CropPage(QWidget):
         add.setObjectName("primary"); add.setEnabled(False); add.clicked.connect(self._accept)
         self.add = add
         actions.addWidget(self.play); actions.addWidget(pause); actions.addStretch(); actions.addWidget(add)
-        layout.addLayout(actions)
+        right.addLayout(actions)
+        layout.addLayout(right, 1)
 
     def _range_row(self, layout, label):
         row = QHBoxLayout()
@@ -128,8 +135,33 @@ class CropPage(QWidget):
     def open_for(self, url):
         self.url, self.info, self.ready = url, None, False
         self.status.setText("Analizando enlace y preparando una copia temporal...")
-        self.player.stop(); self.video.hide(); self.play.setEnabled(False); self.add.setEnabled(False)
+        self.player.stop(); self.cover.hide(); self.video.show(); self.play.setEnabled(False); self.add.setEnabled(False)
         threading.Thread(target=self._prepare, daemon=True).start()
+
+    def show_thumbnail(self, url):
+        self.url = url
+        self.player.stop(); self.video.hide(); self.cover.show(); self.show()
+        self.status.setText("Video detectado. Presiona Recortar video para elegir un rango.")
+        threading.Thread(target=self._load_thumbnail, args=(url,), daemon=True).start()
+
+    def _load_thumbnail(self, url):
+        try:
+            import yt_dlp
+            with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "noplaylist": True}) as ydl:
+                info = ydl.extract_info(url, download=False)
+            image_url = info.get("thumbnail")
+            if not image_url:
+                return
+            folder = Path(tempfile.mkdtemp(prefix="controlapps-thumb-"))
+            target = folder / "thumbnail.jpg"
+            urllib.request.urlretrieve(image_url, target)
+            self.signals.thumbnail.emit(str(target))
+        except Exception:
+            pass
+
+    def _thumbnail_ready(self, path):
+        if self.cover.isVisible():
+            self.cover.setPixmap(QPixmap(path).scaled(300, 170, Qt.KeepAspectRatio, Qt.SmoothTransformation))
 
     def _prepare(self):
         try:
@@ -226,7 +258,8 @@ class CropPage(QWidget):
 
     def _accept(self):
         self.window.add_clip(self.url, self.start.value() // 1000, self.end.value() // 1000)
-        self.window.show_queue()
+        self.player.pause()
+        self.status.setText("Recorte agregado a la cola. Puedes ajustar otro enlace.")
 
     def show_queue(self):
         self.player.stop()
@@ -255,8 +288,13 @@ class DescargadorQt(QMainWindow):
                              on_update=lambda it: self.events.put(it), should_pause=self.pausado.is_set,
                              get_conexiones=lambda: self.conexiones)
         self.stack = QStackedWidget(); self.setCentralWidget(self.stack)
-        self.queue_page = self._queue_page(); self.crop_page = CropPage(self)
-        self.stack.addWidget(self.queue_page); self.stack.addWidget(self.crop_page)
+        self.crop_page = CropPage(self); self.crop_page.hide()
+        self.queue_page = self._queue_page()
+        self.stack.addWidget(self.queue_page)
+        self._preview_url = None
+        self.preview_timer = QTimer(self); self.preview_timer.setSingleShot(True)
+        self.preview_timer.timeout.connect(self._inspect_link)
+        self.urls.textChanged.connect(lambda: self.preview_timer.start(600))
         self.timer = QTimer(self); self.timer.timeout.connect(self._drain); self.timer.start(250)
         self._refresh(); self._style()
 
@@ -283,6 +321,7 @@ class DescargadorQt(QMainWindow):
         title = QLabel("Nueva descarga"); title.setObjectName("pageTitle"); body.addWidget(title)
         hint = QLabel("Pega uno o varios enlaces. Elige video o audio y agrega a la cola."); hint.setObjectName("muted"); body.addWidget(hint)
         self.urls = QTextEdit(); self.urls.setPlaceholderText("https://youtube.com/...\nhttps://instagram.com/reel/..."); self.urls.setFixedHeight(85); body.addWidget(self.urls)
+        body.addWidget(self.crop_page)
         row = QHBoxLayout(); self.mode = QComboBox(); self.mode.addItems(["Video completo", "Audio original (recomendado)", "MP3 320 kbps"])
         self.mode.setCurrentIndex({"video":0,"original":1,"mp3":2}.get(self.modo,0)); self.mode.currentIndexChanged.connect(self._mode_changed)
         paste = QPushButton("Pegar enlace"); paste.clicked.connect(self._paste)
@@ -313,6 +352,14 @@ class DescargadorQt(QMainWindow):
     def _paste(self):
         self.urls.setPlainText(QApplication.clipboard().text())
 
+    def _inspect_link(self):
+        links = parse_links(self.urls.toPlainText())
+        url = links[0] if links else None
+        if not url or url == self._preview_url:
+            return
+        self._preview_url = url
+        self.crop_page.show_thumbnail(url)
+
     def _folder(self):
         path = QFileDialog.getExistingDirectory(self, "Carpeta destino", self.carpeta or "")
         if path: self.carpeta=path; self.folder_label.setText(path); self._save()
@@ -334,7 +381,8 @@ class DescargadorQt(QMainWindow):
         if not self.carpeta: QMessageBox.warning(self,"Falta carpeta","Elegí primero una carpeta destino."); return
         urls=parse_links(self.urls.toPlainText()); url=urls[0] if urls else (self.tree.currentItem().data(0,Qt.UserRole) if self.tree.currentItem() else None)
         if not url: QMessageBox.information(self,"Elegí un video","Pega o selecciona un enlace de YouTube o Instagram."); return
-        self.stack.setCurrentWidget(self.crop_page); self.crop_page.open_for(url)
+        self.crop_page.show()
+        self.crop_page.open_for(url)
 
     def show_queue(self): self.stack.setCurrentWidget(self.queue_page); self._refresh()
 

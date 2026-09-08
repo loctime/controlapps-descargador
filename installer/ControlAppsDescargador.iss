@@ -1,5 +1,5 @@
 #define MyAppName "ControlApps Descargador"
-#define MyAppVersion "2.0.3"
+#define MyAppVersion "2.1.0"
 #define MyAppPublisher "ControlApps"
 #define MyAppExeName "ControlApps Descargador.exe"
 
