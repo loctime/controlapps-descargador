@@ -122,7 +122,7 @@ class CropPage(QWidget):
         self.play.setObjectName("primary")
         self.play.setEnabled(False); self.play.clicked.connect(self._play_range)
         pause = QPushButton("Pausar"); pause.clicked.connect(self.player.pause)
-        add = QPushButton("Usar este recorte")
+        add = QPushButton("Agregar recorte a la cola")
         add.setObjectName("primary"); add.setEnabled(False); add.clicked.connect(self._accept)
         self.add = add
         actions.addWidget(self.play); actions.addWidget(pause); actions.addStretch(); actions.addWidget(add)
@@ -388,7 +388,9 @@ class DescargadorQt(QMainWindow):
 
     def add_clip(self,url,start,end):
         resolver=get_resolver(url); name=f"{resolver.filename(url)}_{_tiempo_humano(start).replace(':','-')}-{_tiempo_humano(end).replace(':','-')}"
-        if self.state.add(url,name,self.carpeta,clip={"inicio":start,"fin":end}): self.state.save(); self._refresh()
+        audio_format = "" if self.modo == "video" else self.modo
+        if self.state.add(url, name, self.carpeta, clip={"inicio":start,"fin":end}, audio_format=audio_format):
+            self.state.save(); self._refresh()
 
     def _crop(self):
         if not self.carpeta: QMessageBox.warning(self,"Falta carpeta","Elegí primero una carpeta destino."); return
