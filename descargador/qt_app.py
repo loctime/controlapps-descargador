@@ -18,7 +18,7 @@ from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QDialog, QFileDialog, QFormLayout, QFrame,
     QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox, QPushButton,
-    QSlider, QSpinBox, QStackedWidget, QTextEdit, QTreeWidget, QAbstractItemView, QMenu,
+    QSlider, QSpinBox, QStackedWidget, QTextEdit, QTreeWidget, QAbstractItemView, QMenu, QCheckBox,
     QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -31,6 +31,7 @@ from .resolvers import get_resolver
 from .search import buscar_youtube
 from .state import State
 from .system import abrir_ruta
+from .updater import aplicar_actualizacion, buscar_actualizacion, descargar_actualizacion
 from .version import APP_VERSION
 
 
@@ -57,6 +58,10 @@ class Signals(QObject):
     search_ready = Signal(list)
     progress = Signal(str)
     thumbnail = Signal(str)
+    update_ready = Signal(object)
+    update_error = Signal()
+    update_file = Signal(str)
+    queue_finished = Signal()
 
 
 class CropPage(QWidget):
@@ -289,6 +294,7 @@ class DescargadorQt(QMainWindow):
         self.conexiones = self.cfg.get("conexiones", 4)
         self.auto_iniciar = self.cfg.get("auto_iniciar", False)
         self.abrir_al_finalizar = self.cfg.get("abrir_al_finalizar", False)
+        self.actualizar_automaticamente = self.cfg.get("actualizar_automaticamente", True)
         self.modo = self.cfg.get("modo_descarga", "video")
         self.state = State(ESTADO); self.state.load()
         self.events = queue.Queue(); self.pausado = threading.Event(); self.pausado.set(); self.worker = None
@@ -299,12 +305,19 @@ class DescargadorQt(QMainWindow):
         self.crop_page = CropPage(self); self.crop_page.hide()
         self.queue_page = self._queue_page()
         self.stack.addWidget(self.queue_page)
+        self.ui_signals = Signals()
+        self.ui_signals.update_ready.connect(self._update_ready)
+        self.ui_signals.update_error.connect(self._update_error)
+        self.ui_signals.update_file.connect(self._update_file)
+        self.ui_signals.queue_finished.connect(self._queue_finished)
         self._preview_url = None
         self.preview_timer = QTimer(self); self.preview_timer.setSingleShot(True)
         self.preview_timer.timeout.connect(self._inspect_link)
         self.urls.textChanged.connect(lambda: self.preview_timer.start(600))
         self.timer = QTimer(self); self.timer.timeout.connect(self._drain); self.timer.start(250)
         self._refresh(); self._style()
+        if self.actualizar_automaticamente:
+            QTimer.singleShot(1500, lambda: self._check_update(False))
 
     def _style(self):
         self.setStyleSheet("""
@@ -323,6 +336,7 @@ class DescargadorQt(QMainWindow):
         brand = QLabel("ControlApps"); brand.setObjectName("brand")
         h.addWidget(brand); h.addWidget(QLabel("  DESCARGADOR")); h.addStretch()
         search = QPushButton("Buscar YouTube"); search.clicked.connect(self._search_dialog); h.addWidget(search)
+        update = QPushButton("Actualizar"); update.clicked.connect(lambda: self._check_update(True)); h.addWidget(update)
         settings = QPushButton("Configuracion"); settings.clicked.connect(self._settings); h.addWidget(settings)
         layout.addWidget(header)
         body = QVBoxLayout(); body.setContentsMargins(16, 14, 16, 0)
@@ -371,7 +385,7 @@ class DescargadorQt(QMainWindow):
     def _save(self):
         _guardar_config({"carpeta":self.carpeta,"conexiones":self.conexiones,"auto_iniciar":self.auto_iniciar,
                           "abrir_al_finalizar":self.abrir_al_finalizar,"modo_descarga":self.modo,
-                          "actualizar_automaticamente":self.cfg.get("actualizar_automaticamente",True)})
+                          "actualizar_automaticamente":self.actualizar_automaticamente})
 
     def _paste(self):
         self.urls.setPlainText(QApplication.clipboard().text())
@@ -436,7 +450,12 @@ class DescargadorQt(QMainWindow):
 
     def _start(self):
         if self.worker and self.worker.is_alive(): return
-        self.worker=threading.Thread(target=lambda:self.engine.run_queue(self.state.items),daemon=True); self.worker.start()
+        def run_queue():
+            self.engine.run_queue(self.state.items)
+            self.state.save()
+            if self.abrir_al_finalizar and self.state.items and all(i.estado == "completo" for i in self.state.items):
+                self.ui_signals.queue_finished.emit()
+        self.worker=threading.Thread(target=run_queue,daemon=True); self.worker.start()
 
     def _retry(self):
         for it in self.state.items:
@@ -500,13 +519,56 @@ class DescargadorQt(QMainWindow):
         urls = [i.url for i in self._selected_items()]
         if urls: QApplication.clipboard().setText("\n".join(urls))
 
+    def _queue_finished(self):
+        self._open_folder()
+
+    def _check_update(self, manual):
+        self._manual_update = manual
+        def check():
+            try: self.ui_signals.update_ready.emit(buscar_actualizacion())
+            except Exception: self.ui_signals.update_error.emit()
+        threading.Thread(target=check, daemon=True).start()
+
+    def _update_ready(self, update):
+        if not update:
+            if self._manual_update: QMessageBox.information(self, "Actualizaciones", "ControlApps Descargador ya esta actualizado.")
+            return
+        if QMessageBox.question(self, "Actualizacion disponible", f"Hay una nueva version ({update['version']}).\nDescargar e instalar ahora?") != QMessageBox.Yes:
+            return
+        def download_update():
+            try: self.ui_signals.update_file.emit(descargar_actualizacion(update))
+            except Exception: self.ui_signals.update_error.emit()
+        threading.Thread(target=download_update, daemon=True).start()
+
+    def _update_file(self, file_path):
+        QMessageBox.information(self, "Actualizando", "La actualizacion se instalara al cerrar ControlApps Descargador.")
+        aplicar_actualizacion(file_path)
+        QApplication.quit()
+
+    def _update_error(self):
+        if self._manual_update: QMessageBox.warning(self, "Actualizaciones", "No se pudo consultar o descargar la actualizacion.")
+
     def _settings(self):
         dialog=QDialog(self); dialog.setWindowTitle("Configuracion"); form=QFormLayout(dialog)
-        con=QSpinBox(); con.setRange(1,8); con.setValue(self.conexiones)
+        folder = QLineEdit(self.carpeta)
+        choose = QPushButton("Elegir carpeta...")
+        folder_row = QHBoxLayout(); folder_row.addWidget(folder); folder_row.addWidget(choose)
+        con=QComboBox(); con.addItems(["1", "2", "4", "8"]); con.setCurrentText(str(self.conexiones))
         auto=QComboBox(); auto.addItems(["Manual", "Iniciar automaticamente"]); auto.setCurrentIndex(1 if self.auto_iniciar else 0)
-        form.addRow("Conexiones por descarga",con); form.addRow("Al agregar enlaces",auto)
+        open_folder = QCheckBox("Abrir la carpeta cuando termina toda la cola"); open_folder.setChecked(self.abrir_al_finalizar)
+        auto_update = QCheckBox("Buscar actualizaciones automaticamente al iniciar"); auto_update.setChecked(self.actualizar_automaticamente)
+        form.addRow("Carpeta predeterminada", folder_row); form.addRow("Conexiones por descarga",con); form.addRow("Al agregar enlaces",auto)
+        form.addRow(open_folder); form.addRow(auto_update)
         save=QPushButton("Guardar"); form.addRow(save)
-        def done(): self.conexiones=con.value(); self.auto_iniciar=auto.currentIndex()==1; self._save(); dialog.accept()
+        def select_folder():
+            path = QFileDialog.getExistingDirectory(dialog, "Carpeta predeterminada", folder.text() or self.carpeta)
+            if path: folder.setText(path)
+        def done():
+            self.carpeta=folder.text().strip(); self.conexiones=int(con.currentText()); self.auto_iniciar=auto.currentIndex()==1
+            self.abrir_al_finalizar=open_folder.isChecked(); self.actualizar_automaticamente=auto_update.isChecked()
+            self.folder_label.setText(self.carpeta or "Elegí una carpeta destino antes de descargar")
+            self._save(); dialog.accept()
+        choose.clicked.connect(select_folder)
         save.clicked.connect(done); dialog.exec()
 
     def _search_dialog(self):
