@@ -18,7 +18,7 @@ from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QDialog, QFileDialog, QFormLayout, QFrame,
     QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox, QPushButton,
-    QSlider, QSpinBox, QStackedWidget, QTextEdit, QTreeWidget,
+    QSlider, QSpinBox, QStackedWidget, QTextEdit, QTreeWidget, QAbstractItemView, QMenu,
     QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -344,13 +344,24 @@ class DescargadorQt(QMainWindow):
         body.addLayout(source_row)
         self.folder_label = QLabel(self.carpeta or "Elegí una carpeta destino antes de descargar"); self.folder_label.setObjectName("muted"); body.addWidget(self.folder_label)
         qtitle = QLabel("Cola de descargas"); qtitle.setObjectName("pageTitle"); body.addWidget(qtitle)
-        self.tree = QTreeWidget(); self.tree.setHeaderLabels(["Nombre", "Tamaño", "Progreso", "Estado"]); self.tree.setColumnWidth(0, 430); body.addWidget(self.tree, 1)
+        self.tree = QTreeWidget(); self.tree.setHeaderLabels(["Nombre", "Tamaño", "Progreso", "Estado"]); self.tree.setColumnWidth(0, 430)
+        self.tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self._queue_menu)
+        body.addWidget(self.tree, 1)
         actions = QHBoxLayout(); self.play_button = QPushButton("Reanudar descargas"); self.play_button.setObjectName("primary"); self.play_button.clicked.connect(self._toggle)
         retry = QPushButton("Reintentar fallidas"); retry.clicked.connect(self._retry)
         remove = QPushButton("Quitar seleccion"); remove.clicked.connect(self._remove)
         open_folder = QPushButton("Abrir carpeta"); open_folder.clicked.connect(self._open_folder)
         for x in (self.play_button,retry,remove,open_folder): actions.addWidget(x)
         actions.addStretch(); body.addLayout(actions)
+        actions2 = QHBoxLayout()
+        select_all = QPushButton("Seleccionar todo"); select_all.clicked.connect(self._select_all)
+        retry_selected = QPushButton("Reintentar seleccion"); retry_selected.clicked.connect(self._retry_selected)
+        open_file = QPushButton("Abrir archivo"); open_file.clicked.connect(self._open_selected)
+        clear_done = QPushButton("Limpiar completas"); clear_done.clicked.connect(self._clear_completed)
+        for x in (select_all, retry_selected, open_file, clear_done): actions2.addWidget(x)
+        actions2.addStretch(); body.addLayout(actions2)
         self.summary = QLabel("Sin descargas en cola"); self.summary.setObjectName("muted"); body.addWidget(self.summary)
         layout.addLayout(body, 1); return page
 
@@ -394,7 +405,7 @@ class DescargadorQt(QMainWindow):
 
     def _crop(self):
         if not self.carpeta: QMessageBox.warning(self,"Falta carpeta","Elegí primero una carpeta destino."); return
-        urls=parse_links(self.urls.toPlainText()); url=urls[0] if urls else (self.tree.currentItem().data(0,Qt.UserRole) if self.tree.currentItem() else None)
+        urls=parse_links(self.urls.toPlainText()); url=urls[0] if urls else (self.tree.currentItem().data(0,Qt.UserRole + 1) if self.tree.currentItem() else None)
         if not url: QMessageBox.information(self,"Elegí un video","Pega o selecciona un enlace de YouTube o Instagram."); return
         self.crop_page.show()
         self.crop_page.open_for(url)
@@ -406,7 +417,9 @@ class DescargadorQt(QMainWindow):
         for it in self.state.items:
             name=it.nombre + (f"  [{_tiempo_humano(it.clip['inicio'])} - {_tiempo_humano(it.clip['fin'])}]" if it.clip else "")
             pct=int(it.bytes_bajados*100/it.total) if it.total else 0
-            item=QTreeWidgetItem([name, str(it.total or "?"), f"{pct}%", it.estado]); item.setData(0,Qt.UserRole,it.url); self.tree.addTopLevelItem(item)
+            item=QTreeWidgetItem([name, str(it.total or "?"), f"{pct}%", it.estado])
+            item.setData(0, Qt.UserRole, id(it)); item.setData(0, Qt.UserRole + 1, it.url)
+            self.tree.addTopLevelItem(item)
         counts={s:sum(i.estado==s for i in self.state.items) for s in ("pendiente","descargando","completo","fallido")}
         self.summary.setText(" · ".join(f"{n} {s}" for s,n in counts.items() if n) or "Sin descargas en cola")
 
@@ -431,10 +444,61 @@ class DescargadorQt(QMainWindow):
         self.state.save(); self._refresh()
 
     def _remove(self):
-        selected={x.data(0,Qt.UserRole) for x in self.tree.selectedItems()}; self.state.items[:]=[i for i in self.state.items if i.url not in selected]; self.state.save(); self._refresh()
+        selected={x.data(0, Qt.UserRole) for x in self.tree.selectedItems()}
+        if not selected: return
+        activos = [i for i in self.state.items if id(i) in selected and i.estado == "descargando"]
+        if activos:
+            QMessageBox.warning(self, "Descarga en curso", "Pausa antes de quitar una descarga activa.")
+            selected -= {id(i) for i in activos}
+        self.state.items[:]=[i for i in self.state.items if id(i) not in selected]; self.state.save(); self._refresh()
 
     def _open_folder(self):
         if self.carpeta and os.path.isdir(self.carpeta): abrir_ruta(self.carpeta)
+
+    def _selected_items(self):
+        selected = {x.data(0, Qt.UserRole) for x in self.tree.selectedItems()}
+        return [i for i in self.state.items if id(i) in selected]
+
+    def _select_all(self):
+        self.tree.selectAll()
+
+    def _retry_selected(self):
+        for item in self._selected_items():
+            if item.estado in ("fallido", "pausado"):
+                item.estado = "pendiente"
+        self.state.save(); self._refresh()
+        if not self.pausado.is_set(): self._start()
+
+    def _open_selected(self):
+        selected = self._selected_items()
+        if not selected:
+            QMessageBox.information(self, "Elegí una descarga", "Seleccioná un archivo de la lista."); return
+        path = os.path.join(selected[0].carpeta, selected[0].nombre)
+        if os.path.isfile(path): abrir_ruta(path)
+        else: QMessageBox.information(self, "Archivo no disponible", "Todavía no se descargó o fue movido.")
+
+    def _clear_completed(self):
+        completed = [i for i in self.state.items if i.estado == "completo"]
+        if not completed: return
+        if QMessageBox.question(self, "Limpiar completas", f"Quitar {len(completed)} descarga(s) completas de la cola?\nLos archivos no se borran.") != QMessageBox.Yes:
+            return
+        self.state.items[:] = [i for i in self.state.items if i.estado != "completo"]
+        self.state.save(); self._refresh()
+
+    def _queue_menu(self, point):
+        item = self.tree.itemAt(point)
+        if item and not item.isSelected():
+            self.tree.setCurrentItem(item); item.setSelected(True)
+        menu = QMenu(self)
+        menu.addAction("Abrir archivo", self._open_selected)
+        menu.addAction("Reintentar seleccion", self._retry_selected)
+        menu.addAction("Copiar enlaces", self._copy_selected_urls)
+        menu.addSeparator(); menu.addAction("Quitar de la cola", self._remove)
+        menu.exec(self.tree.viewport().mapToGlobal(point))
+
+    def _copy_selected_urls(self):
+        urls = [i.url for i in self._selected_items()]
+        if urls: QApplication.clipboard().setText("\n".join(urls))
 
     def _settings(self):
         dialog=QDialog(self); dialog.setWindowTitle("Configuracion"); form=QFormLayout(dialog)
