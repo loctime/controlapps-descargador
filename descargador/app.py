@@ -3,6 +3,10 @@ import queue
 import threading
 import json
 import time
+import tempfile
+import subprocess
+import shutil
+import sys
 import tkinter as tk
 import webbrowser
 from tkinter import ttk, filedialog, messagebox
@@ -384,6 +388,19 @@ class App:
             separador = "&" if "?" in url else "?"
             webbrowser.open(url + f"{separador}t={inicio.get()}")
 
+        def abrir_editor():
+            if not duracion.get():
+                return
+
+            def elegido(rango):
+                inicio.set(rango["inicio"])
+                fin.set(rango["fin"])
+                inicio_texto.set(_tiempo_humano(inicio.get()))
+                fin_texto.set(_tiempo_humano(fin.get()))
+                estado.config(text="Rango elegido en el editor. Puedes ajustarlo o agregarlo a la cola.")
+
+            self._abrir_editor_previsualizacion(url, inicio.get(), fin.get(), duracion.get(), elegido)
+
         def agregar_recorte():
             aplicar_tiempos()
             if not duracion.get() or inicio.get() < 0 or fin.get() <= inicio.get() or fin.get() > duracion.get():
@@ -402,7 +419,8 @@ class App:
 
         ttk.Button(acciones, text="Primeros 30 s", command=lambda: preset(30)).pack(side="left")
         ttk.Button(acciones, text="Primer minuto", command=lambda: preset(60)).pack(side="left", padx=(6, 0))
-        ttk.Button(acciones, text="Preescuchar desde inicio", command=preescuchar).pack(side="left", padx=(14, 0))
+        ttk.Button(acciones, text="Editor con previsualizacion", command=abrir_editor).pack(side="left", padx=(14, 0))
+        ttk.Button(acciones, text="Abrir en navegador", command=preescuchar).pack(side="left", padx=(6, 0))
         btn_agregar = ttk.Button(acciones, text="Agregar recorte", command=agregar_recorte, state="disabled")
         btn_agregar.pack(side="right")
 
@@ -433,6 +451,39 @@ class App:
             estado.config(text="Revisa que el enlace sea publico y volve a intentarlo.")
 
         threading.Thread(target=cargar_info, daemon=True).start()
+
+    def _abrir_editor_previsualizacion(self, url, inicio, fin, duracion, al_elegir):
+        """Abre el reproductor Qt y trae el rango elegido sin bloquear Tk."""
+        carpeta = tempfile.mkdtemp(prefix="controlapps-preview-")
+        config_path = os.path.join(carpeta, "editor.json")
+        resultado = os.path.join(carpeta, "resultado.json")
+        with open(config_path, "w", encoding="utf-8") as archivo:
+            json.dump({"url": url, "inicio": inicio, "fin": fin, "duracion": duracion,
+                       "resultado": resultado}, archivo)
+        if getattr(sys, "frozen", False):
+            comando = [sys.executable, "--preview-editor", config_path]
+        else:
+            comando = [sys.executable, "-m", "descargador.preview_editor", config_path]
+        try:
+            proceso = subprocess.Popen(comando)
+        except OSError:
+            shutil.rmtree(carpeta, ignore_errors=True)
+            messagebox.showwarning("Editor no disponible", "No se pudo iniciar el editor de previsualizacion.")
+            return
+
+        def esperar_resultado():
+            if os.path.exists(resultado):
+                try:
+                    with open(resultado, encoding="utf-8") as archivo:
+                        al_elegir(json.load(archivo))
+                except (OSError, ValueError, KeyError):
+                    pass
+            if proceso.poll() is None:
+                self.root.after(350, esperar_resultado)
+            else:
+                shutil.rmtree(carpeta, ignore_errors=True)
+
+        self.root.after(350, esperar_resultado)
 
     def _cargar_txt(self):
         ruta = filedialog.askopenfilename(filetypes=[("Texto", "*.txt")])

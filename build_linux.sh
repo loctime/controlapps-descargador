@@ -21,7 +21,7 @@ python3 -m venv "$VENV"
 "$VENV/bin/python" -m pip install --upgrade pip
 "$VENV/bin/python" -m pip install -r requirements.txt pyinstaller
 "$VENV/bin/python" -m PyInstaller --noconfirm --clean --windowed \
-  --name "ControlApps Descargador" --collect-all yt_dlp \
+  --name "ControlApps Descargador" --collect-all yt_dlp --collect-all PySide6 \
   --add-binary "$(command -v ffmpeg):." run.py
 
 rm -rf "$APPDIR"
