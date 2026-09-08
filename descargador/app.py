@@ -388,18 +388,38 @@ class App:
             separador = "&" if "?" in url else "?"
             webbrowser.open(url + f"{separador}t={inicio.get()}")
 
-        def abrir_editor():
+        def usar_rango_editor(rango):
+            nombre = f"{resolver.filename(url)}_{_tiempo_humano(rango['inicio']).replace(':', '-')}-{_tiempo_humano(rango['fin']).replace(':', '-')}"
+            clip = {"inicio": rango["inicio"], "fin": rango["fin"]}
+            if self.state.add(url, nombre, self.carpeta, clip=clip):
+                self.state.save()
+                self._refrescar_tabla()
+                if self.auto_iniciar:
+                    self.pausado.clear()
+                    self.btn_play.config(text="Pausar")
+                    self._arrancar_worker()
+            ventana.destroy()
+
+        def abrir_editor(ocultar=False):
             if not duracion.get():
                 return
+            if ocultar:
+                ventana.withdraw()
 
             def elegido(rango):
+                if ocultar:
+                    usar_rango_editor(rango)
+                    return
                 inicio.set(rango["inicio"])
                 fin.set(rango["fin"])
                 inicio_texto.set(_tiempo_humano(inicio.get()))
                 fin_texto.set(_tiempo_humano(fin.get()))
                 estado.config(text="Rango elegido en el editor. Puedes ajustarlo o agregarlo a la cola.")
 
-            self._abrir_editor_previsualizacion(url, inicio.get(), fin.get(), duracion.get(), elegido)
+            self._abrir_editor_previsualizacion(
+                url, inicio.get(), fin.get(), duracion.get(), elegido,
+                al_cancelar=ventana.deiconify if ocultar else None,
+            )
 
         def agregar_recorte():
             aplicar_tiempos()
@@ -419,8 +439,7 @@ class App:
 
         ttk.Button(acciones, text="Primeros 30 s", command=lambda: preset(30)).pack(side="left")
         ttk.Button(acciones, text="Primer minuto", command=lambda: preset(60)).pack(side="left", padx=(6, 0))
-        ttk.Button(acciones, text="Editor con previsualizacion", command=abrir_editor).pack(side="left", padx=(14, 0))
-        ttk.Button(acciones, text="Abrir en navegador", command=preescuchar).pack(side="left", padx=(6, 0))
+        ttk.Button(acciones, text="Abrir editor", command=abrir_editor).pack(side="left", padx=(14, 0))
         btn_agregar = ttk.Button(acciones, text="Agregar recorte", command=agregar_recorte, state="disabled")
         btn_agregar.pack(side="right")
 
@@ -443,8 +462,9 @@ class App:
             fin.set(segundos)
             escala_inicio.configure(to=segundos)
             escala_fin.configure(to=segundos)
-            estado.config(text=f"Duracion: {_tiempo_humano(segundos)}. Elegi el rango que queres descargar.")
+            estado.config(text="Abriendo el editor con previsualizacion...")
             btn_agregar.config(state="normal")
+            self.root.after(50, lambda: abrir_editor(True))
 
         def fallo(error):
             titulo.set("No se pudo analizar este video")
@@ -452,7 +472,7 @@ class App:
 
         threading.Thread(target=cargar_info, daemon=True).start()
 
-    def _abrir_editor_previsualizacion(self, url, inicio, fin, duracion, al_elegir):
+    def _abrir_editor_previsualizacion(self, url, inicio, fin, duracion, al_elegir, al_cancelar=None):
         """Abre el reproductor Qt y trae el rango elegido sin bloquear Tk."""
         carpeta = tempfile.mkdtemp(prefix="controlapps-preview-")
         config_path = os.path.join(carpeta, "editor.json")
@@ -471,16 +491,21 @@ class App:
             messagebox.showwarning("Editor no disponible", "No se pudo iniciar el editor de previsualizacion.")
             return
 
+        resultado_procesado = {"valor": False}
+
         def esperar_resultado():
-            if os.path.exists(resultado):
+            if not resultado_procesado["valor"] and os.path.exists(resultado):
                 try:
                     with open(resultado, encoding="utf-8") as archivo:
                         al_elegir(json.load(archivo))
+                    resultado_procesado["valor"] = True
                 except (OSError, ValueError, KeyError):
                     pass
             if proceso.poll() is None:
                 self.root.after(350, esperar_resultado)
             else:
+                if not resultado_procesado["valor"] and al_cancelar:
+                    al_cancelar()
                 shutil.rmtree(carpeta, ignore_errors=True)
 
         self.root.after(350, esperar_resultado)
