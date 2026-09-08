@@ -100,8 +100,14 @@ class CropPage(QWidget):
         left.addWidget(self.cover)
         self.video.hide()
         left.addWidget(self.video)
+        self.crop_button = QPushButton("Recortar video")
+        self.crop_button.setEnabled(False)
+        self.crop_button.clicked.connect(self.window._crop)
+        left.addWidget(self.crop_button)
         layout.addLayout(left)
-        right = QVBoxLayout()
+        self.right_widget = QWidget()
+        right = QVBoxLayout(self.right_widget)
+        right.setContentsMargins(8, 0, 0, 0)
         right.addWidget(self.status)
         self.playhead = QSlider(Qt.Horizontal)
         self.playhead.setEnabled(False)
@@ -121,7 +127,8 @@ class CropPage(QWidget):
         self.add = add
         actions.addWidget(self.play); actions.addWidget(pause); actions.addStretch(); actions.addWidget(add)
         right.addLayout(actions)
-        layout.addLayout(right, 1)
+        layout.addWidget(self.right_widget, 1)
+        self.right_widget.hide()
 
     def _range_row(self, layout, label):
         row = QHBoxLayout()
@@ -134,13 +141,14 @@ class CropPage(QWidget):
 
     def open_for(self, url):
         self.url, self.info, self.ready = url, None, False
+        self.right_widget.show()
         self.status.setText("Analizando enlace y preparando una copia temporal...")
         self.player.stop(); self.cover.hide(); self.video.show(); self.play.setEnabled(False); self.add.setEnabled(False)
         threading.Thread(target=self._prepare, daemon=True).start()
 
     def show_thumbnail(self, url):
         self.url = url
-        self.player.stop(); self.video.hide(); self.cover.show(); self.show()
+        self.player.stop(); self.video.hide(); self.cover.show(); self.right_widget.hide(); self.crop_button.setEnabled(True); self.show()
         self.status.setText("Video detectado. Presiona Recortar video para elegir un rango.")
         threading.Thread(target=self._load_thumbnail, args=(url,), daemon=True).start()
 
@@ -320,23 +328,28 @@ class DescargadorQt(QMainWindow):
         body = QVBoxLayout(); body.setContentsMargins(16, 14, 16, 0)
         title = QLabel("Nueva descarga"); title.setObjectName("pageTitle"); body.addWidget(title)
         hint = QLabel("Pega uno o varios enlaces. Elige video o audio y agrega a la cola."); hint.setObjectName("muted"); body.addWidget(hint)
-        self.urls = QTextEdit(); self.urls.setPlaceholderText("https://youtube.com/...\nhttps://instagram.com/reel/..."); self.urls.setFixedHeight(85); body.addWidget(self.urls)
-        body.addWidget(self.crop_page)
+        source_row = QHBoxLayout()
+        source_left = QVBoxLayout()
+        self.urls = QTextEdit(); self.urls.setPlaceholderText("https://youtube.com/...\nhttps://instagram.com/reel/..."); self.urls.setFixedHeight(85)
+        source_left.addWidget(self.urls)
         row = QHBoxLayout(); self.mode = QComboBox(); self.mode.addItems(["Video completo", "Audio original (recomendado)", "MP3 320 kbps"])
         self.mode.setCurrentIndex({"video":0,"original":1,"mp3":2}.get(self.modo,0)); self.mode.currentIndexChanged.connect(self._mode_changed)
         paste = QPushButton("Pegar enlace"); paste.clicked.connect(self._paste)
         folder = QPushButton("Carpeta destino"); folder.clicked.connect(self._folder)
         self.download_btn = QPushButton("Agregar a la cola"); self.download_btn.setObjectName("primary"); self.download_btn.clicked.connect(self._add_urls)
-        row.addWidget(self.mode); row.addWidget(paste); row.addWidget(folder); row.addStretch(); row.addWidget(self.download_btn); body.addLayout(row)
+        row.addWidget(self.mode); row.addWidget(paste); row.addWidget(folder); row.addStretch(); row.addWidget(self.download_btn)
+        source_left.addLayout(row)
+        source_row.addLayout(source_left, 1)
+        source_row.addWidget(self.crop_page)
+        body.addLayout(source_row)
         self.folder_label = QLabel(self.carpeta or "Elegí una carpeta destino antes de descargar"); self.folder_label.setObjectName("muted"); body.addWidget(self.folder_label)
         qtitle = QLabel("Cola de descargas"); qtitle.setObjectName("pageTitle"); body.addWidget(qtitle)
         self.tree = QTreeWidget(); self.tree.setHeaderLabels(["Nombre", "Tamaño", "Progreso", "Estado"]); self.tree.setColumnWidth(0, 430); body.addWidget(self.tree, 1)
         actions = QHBoxLayout(); self.play_button = QPushButton("Reanudar descargas"); self.play_button.setObjectName("primary"); self.play_button.clicked.connect(self._toggle)
         retry = QPushButton("Reintentar fallidas"); retry.clicked.connect(self._retry)
         remove = QPushButton("Quitar seleccion"); remove.clicked.connect(self._remove)
-        crop = QPushButton("Recortar video"); crop.clicked.connect(self._crop)
         open_folder = QPushButton("Abrir carpeta"); open_folder.clicked.connect(self._open_folder)
-        for x in (self.play_button,retry,remove,crop,open_folder): actions.addWidget(x)
+        for x in (self.play_button,retry,remove,open_folder): actions.addWidget(x)
         actions.addStretch(); body.addLayout(actions)
         self.summary = QLabel("Sin descargas en cola"); self.summary.setObjectName("muted"); body.addWidget(self.summary)
         layout.addLayout(body, 1); return page
