@@ -5,6 +5,7 @@ import os
 import queue
 import shutil
 import sys
+import subprocess
 import tempfile
 import threading
 from pathlib import Path
@@ -39,6 +40,13 @@ def _ffmpeg_location():
         if os.path.isfile(os.path.join(folder, name)):
             return folder
     return None
+
+
+def _ffmpeg_command():
+    location = _ffmpeg_location()
+    if location:
+        return os.path.join(location, "ffmpeg.exe" if sys.platform.startswith("win") else "ffmpeg")
+    return "ffmpeg"
 
 
 class Signals(QObject):
@@ -133,7 +141,9 @@ class CropPage(QWidget):
             self.preview_dir = str(folder)
             options = {
                 "quiet": True, "no_warnings": True, "noplaylist": True,
-                "format": "bv*[height<=480]+ba/b[height<=480]/b",
+                # Priorizamos H.264/AAC. YouTube suele entregar AV1 primero,
+                # pero muchas GPUs integradas no pueden mostrarlo desde Qt.
+                "format": "bv*[vcodec^=avc1][height<=480]+ba[acodec^=mp4a]/b[vcodec^=avc1][height<=480]/bv*[height<=480]+ba/b",
                 "merge_output_format": "mp4", "outtmpl": str(folder / "preview.%(ext)s"),
                 "windowsfilenames": True,
             }
@@ -142,7 +152,19 @@ class CropPage(QWidget):
             with yt_dlp.YoutubeDL(options) as ydl:
                 ydl.download([self.url])
             files = [p for p in folder.glob("preview.*") if p.suffix not in {".part", ".ytdl"}]
-            self.signals.preview_ready.emit(str(max(files, key=lambda p: p.stat().st_mtime)))
+            source = max(files, key=lambda p: p.stat().st_mtime)
+            # Aun cuando el sitio no ofrece H.264, normalizamos la copia de
+            # trabajo a H.264 por software. Es temporal y nunca afecta la
+            # calidad del archivo final descargado por el usuario.
+            compatible = folder / "preview-compatible.mp4"
+            result = subprocess.run(
+                [_ffmpeg_command(), "-y", "-i", str(source), "-c:v", "libx264", "-preset", "veryfast",
+                 "-crf", "26", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", str(compatible)],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
+            )
+            if result.returncode != 0 or not compatible.exists():
+                raise RuntimeError("No se pudo convertir la previsualizacion a un formato compatible")
+            self.signals.preview_ready.emit(str(compatible))
         except Exception as exc:
             self.signals.error.emit(str(exc))
 
