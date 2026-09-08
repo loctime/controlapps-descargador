@@ -154,6 +154,10 @@ class CropPage(QWidget):
         self.player.setSource(QUrl.fromLocalFile(path))
         self.video.show()
         self.status.setText("Listo. Mueve Inicio y Fin; el rango se reproduce en loop.")
+        # QVideoWidget no muestra un fotograma mientras el reproductor queda
+        # detenido en 00:00. Arrancar aqui hace visible la previsualizacion
+        # apenas termina de bajar, sin que el usuario deba descubrir Play.
+        self.player.play()
 
     def _duration_changed(self, duration):
         if not duration: return
