@@ -54,6 +54,7 @@ class Signals(QObject):
     preview_ready = Signal(str)
     error = Signal(str)
     search_ready = Signal(list)
+    progress = Signal(str)
 
 
 class CropPage(QWidget):
@@ -76,6 +77,7 @@ class CropPage(QWidget):
         self.player.positionChanged.connect(self._position_changed)
         self.player.durationChanged.connect(self._duration_changed)
         self._build()
+        self.signals.progress.connect(self.status.setText)
 
     def _build(self):
         layout = QVBoxLayout(self)
@@ -147,6 +149,12 @@ class CropPage(QWidget):
                 "merge_output_format": "mp4", "outtmpl": str(folder / "preview.%(ext)s"),
                 "windowsfilenames": True,
             }
+            def download_progress(data):
+                if data.get("status") == "downloading":
+                    total = data.get("total_bytes") or data.get("total_bytes_estimate") or 0
+                    pct = int(data.get("downloaded_bytes", 0) * 100 / total) if total else 0
+                    self.signals.progress.emit(f"Descargando copia temporal... {pct}%")
+            options["progress_hooks"] = [download_progress]
             ffmpeg = _ffmpeg_location()
             if ffmpeg: options["ffmpeg_location"] = ffmpeg
             with yt_dlp.YoutubeDL(options) as ydl:
@@ -157,12 +165,21 @@ class CropPage(QWidget):
             # trabajo a H.264 por software. Es temporal y nunca afecta la
             # calidad del archivo final descargado por el usuario.
             compatible = folder / "preview-compatible.mp4"
-            result = subprocess.run(
+            self.signals.progress.emit("Convirtiendo la copia a formato compatible... 0%")
+            process = subprocess.Popen(
                 [_ffmpeg_command(), "-y", "-i", str(source), "-c:v", "libx264", "-preset", "veryfast",
-                 "-crf", "26", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", str(compatible)],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
+                 "-crf", "26", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k",
+                 "-progress", "pipe:1", "-nostats", str(compatible)],
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
-            if result.returncode != 0 or not compatible.exists():
+            total_us = int(info.get("duration") or 0) * 1_000_000
+            for line in process.stdout:
+                if line.startswith("out_time_us=") and total_us:
+                    pct = min(100, int(int(line.split("=", 1)[1]) * 100 / total_us))
+                    self.signals.progress.emit(f"Convirtiendo la copia a formato compatible... {pct}%")
+            process.wait()
+            if process.returncode != 0 or not compatible.exists():
                 raise RuntimeError("No se pudo convertir la previsualizacion a un formato compatible")
             self.signals.preview_ready.emit(str(compatible))
         except Exception as exc:
