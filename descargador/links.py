@@ -3,8 +3,13 @@ import re
 _PART = re.compile(r"part0*(\d+)", re.IGNORECASE)
 
 
+_URL = re.compile(r"https?://[^\s<>\"',;]+", re.IGNORECASE)
+
+
 def parse_links(text):
-    return [l.strip() for l in text.splitlines() if l.strip().lower().startswith("http")]
+    """Extrae todas las URLs http(s) del texto, sin importar si vienen una
+    por linea, separadas por espacios/comas o mezcladas con otro texto."""
+    return [u.rstrip(").") for u in _URL.findall(text)]
 
 
 def sort_by_part(links):

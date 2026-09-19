@@ -62,3 +62,22 @@ def test_agrupar_preserva_orden_de_aparicion():
     assert [it.nombre for it in grupos[0][1]] == ["B.part01.rar", "B.part02.rar"]
     assert [it.nombre for it in grupos[1][1]] == ["A.part01.rar"]
     assert [it.nombre for it in grupos[2][1]] == ["suelto.zip"]
+
+
+def test_parse_varios_links_en_una_misma_linea():
+    texto = "https://a.com/1 https://a.com/2\thttps://a.com/3"
+    assert parse_links(texto) == ["https://a.com/1", "https://a.com/2", "https://a.com/3"]
+
+
+def test_parse_links_separados_por_coma_o_punto_y_coma():
+    texto = "https://a.com/1, https://a.com/2;https://a.com/3"
+    assert parse_links(texto) == ["https://a.com/1", "https://a.com/2", "https://a.com/3"]
+
+
+def test_parse_links_con_texto_alrededor_y_saltos_windows():
+    texto = "Parte 1: https://a.com/1\r\nParte 2: (https://a.com/2)\r\n"
+    assert parse_links(texto) == ["https://a.com/1", "https://a.com/2"]
+
+
+def test_parse_acepta_http_en_mayusculas():
+    assert parse_links("HTTPS://A.com/1") == ["HTTPS://A.com/1"]
