@@ -9,6 +9,10 @@ class NeedsBrowser(Exception):
 class Resolver:
     """Base para resolvers de hosts."""
 
+    # "video": se puede previsualizar/recortar/bajar solo audio; "archivo": se
+    # baja tal cual; "desconocido": hay que probar con yt-dlp para saberlo.
+    kind = "archivo"
+
     def matches(self, url):
         raise NotImplementedError
 

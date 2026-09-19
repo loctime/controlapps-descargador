@@ -27,7 +27,7 @@ from .browser import resolve_with_browser
 from .downloader import download
 from .engine import Engine
 from .links import parse_links, sort_by_part
-from .resolvers import get_resolver
+from .resolvers import get_resolver, link_kind
 from .search import buscar_youtube
 from .state import State
 from .system import abrir_ruta
@@ -58,6 +58,7 @@ class Signals(QObject):
     search_ready = Signal(list)
     progress = Signal(str)
     thumbnail = Signal(str)
+    video_confirmed = Signal(str)
     update_ready = Signal(object)
     update_error = Signal()
     update_file = Signal(str)
@@ -86,6 +87,7 @@ class CropPage(QWidget):
         self._build()
         self.signals.progress.connect(self.status.setText)
         self.signals.thumbnail.connect(self._thumbnail_ready)
+        self.signals.video_confirmed.connect(window._video_confirmed)
 
     def _build(self):
         layout = QHBoxLayout(self)
@@ -151,17 +153,24 @@ class CropPage(QWidget):
         self.player.stop(); self.cover.hide(); self.video.show(); self.play.setEnabled(False); self.add.setEnabled(False)
         threading.Thread(target=self._prepare, daemon=True).start()
 
-    def show_thumbnail(self, url):
+    def show_thumbnail(self, url, reveal=True):
+        """reveal=False: el panel sigue oculto hasta que yt-dlp confirme que es un video."""
         self.url = url
-        self.player.stop(); self.video.hide(); self.cover.show(); self.right_widget.hide(); self.crop_button.setEnabled(True); self.show()
+        self.player.stop(); self.video.hide(); self.cover.show(); self.right_widget.hide(); self.crop_button.setEnabled(True)
+        self.setVisible(reveal)
         self.status.setText("Video detectado. Presiona Recortar video para elegir un rango.")
-        threading.Thread(target=self._load_thumbnail, args=(url,), daemon=True).start()
+        threading.Thread(target=self._load_thumbnail, args=(url, not reveal), daemon=True).start()
 
-    def _load_thumbnail(self, url):
+    def hide_preview(self):
+        self.player.stop(); self.hide()
+
+    def _load_thumbnail(self, url, confirm=False):
         try:
             import yt_dlp
             with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "noplaylist": True}) as ydl:
                 info = ydl.extract_info(url, download=False)
+            if confirm:
+                self.signals.video_confirmed.emit(url)
             image_url = info.get("thumbnail")
             if not image_url:
                 return
@@ -311,6 +320,7 @@ class DescargadorQt(QMainWindow):
         self.ui_signals.update_file.connect(self._update_file)
         self.ui_signals.queue_finished.connect(self._queue_finished)
         self._preview_url = None
+        self._confirmed_url = None
         self.preview_timer = QTimer(self); self.preview_timer.setSingleShot(True)
         self.preview_timer.timeout.connect(self._inspect_link)
         self.urls.textChanged.connect(lambda: self.preview_timer.start(600))
@@ -344,10 +354,11 @@ class DescargadorQt(QMainWindow):
         hint = QLabel("Pega uno o varios enlaces. Elige video o audio y agrega a la cola."); hint.setObjectName("muted"); body.addWidget(hint)
         source_row = QHBoxLayout()
         source_left = QVBoxLayout()
-        self.urls = QTextEdit(); self.urls.setPlaceholderText("https://youtube.com/...\nhttps://instagram.com/reel/..."); self.urls.setFixedHeight(85)
+        self.urls = QTextEdit(); self.urls.setPlaceholderText("https://youtube.com/...\nhttps://instagram.com/reel/..."); self.urls.setMinimumHeight(130)
         source_left.addWidget(self.urls)
         row = QHBoxLayout(); self.mode = QComboBox(); self.mode.addItems(["Video completo", "Audio original (recomendado)", "MP3 320 kbps"])
         self.mode.setCurrentIndex({"video":0,"original":1,"mp3":2}.get(self.modo,0)); self.mode.currentIndexChanged.connect(self._mode_changed)
+        self.mode.hide()  # solo tiene sentido con videos: _inspect_link lo muestra
         paste = QPushButton("Pegar enlace"); paste.clicked.connect(self._paste)
         folder = QPushButton("Carpeta destino"); folder.clicked.connect(self._folder)
         self.download_btn = QPushButton("Agregar a la cola"); self.download_btn.setObjectName("primary"); self.download_btn.clicked.connect(self._add_urls)
@@ -391,12 +402,25 @@ class DescargadorQt(QMainWindow):
         self.urls.setPlainText(QApplication.clipboard().text())
 
     def _inspect_link(self):
+        """Muestra miniatura y modo de descarga solo si hay un video entre los links."""
         links = parse_links(self.urls.toPlainText())
-        url = links[0] if links else None
-        if not url or url == self._preview_url:
+        video = next((u for u in links if link_kind(u) == "video"), None)
+        maybe = None if video else next((u for u in links if link_kind(u) == "desconocido"), None)
+        url = video or maybe
+        if not url:
+            self._preview_url = self._confirmed_url = None
+            self.mode.hide(); self.crop_page.hide_preview()
+            return
+        self.mode.setVisible(video is not None or url == self._confirmed_url)
+        if url == self._preview_url:
             return
         self._preview_url = url
-        self.crop_page.show_thumbnail(url)
+        self.crop_page.show_thumbnail(url, reveal=video is not None)
+
+    def _video_confirmed(self, url):
+        if url == self._preview_url:
+            self._confirmed_url = url
+            self.mode.show(); self.crop_page.show()
 
     def _folder(self):
         path = QFileDialog.getExistingDirectory(self, "Carpeta destino", self.carpeta or "")
@@ -407,7 +431,9 @@ class DescargadorQt(QMainWindow):
         added=0
         for url in sort_by_part(parse_links(self.urls.toPlainText())):
             resolver=get_resolver(url); name=resolver.filename(url) if resolver else url.rsplit("/",1)[-1]
-            if self.state.add(url,name,self.carpeta,audio_format="" if self.modo=="video" else self.modo): added += 1
+            kind = link_kind(url)
+            usa_modo = kind == "video" or (kind == "desconocido" and not self.mode.isHidden())
+            if self.state.add(url,name,self.carpeta,audio_format="" if self.modo=="video" or not usa_modo else self.modo): added += 1
         self.urls.clear(); self.state.save(); self._refresh()
         if added and self.auto_iniciar: self.pausado.clear(); self._start()
 

@@ -6,6 +6,8 @@ from .instagram import InstagramResolver
 class WebMediaResolver(InstagramResolver):
     """Fallback multimedia: yt-dlp detecta TikTok, Vimeo, Twitch, etc."""
 
+    kind = "desconocido"
+
     def matches(self, url):
         return urlparse(url).scheme in {"http", "https"}
 

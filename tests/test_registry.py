@@ -36,3 +36,12 @@ def test_get_resolver_youtube():
 def test_get_resolver_web_es_fallback_para_tiktok_y_vimeo():
     assert get_resolver("https://www.tiktok.com/@cuenta/video/123") is not None
     assert get_resolver("https://vimeo.com/123") is not None
+
+
+def test_link_kind_clasifica_por_host():
+    from descargador.resolvers import link_kind
+    assert link_kind("https://www.youtube.com/watch?v=abc123") == "video"
+    assert link_kind("https://www.instagram.com/reel/DGBd7s-pnRp/") == "video"
+    assert link_kind("https://www.mediafire.com/file/abc/Juego.part01.rar/file") == "archivo"
+    assert link_kind("https://megaup.net/abc/Juego.rar") == "archivo"
+    assert link_kind("https://ejemplo-desconocido.com/x") == "desconocido"

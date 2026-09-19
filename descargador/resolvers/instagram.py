@@ -18,6 +18,7 @@ class InstagramResolver(Resolver):
     URL directa al downloader comun: yt-dlp baja y fusiona los formatos.
     """
 
+    kind = "video"
     _PATH = re.compile(r"^/(?:reel|p|tv|stories)/([^/?#]+)", re.IGNORECASE)
 
     def matches(self, url):
