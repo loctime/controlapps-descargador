@@ -33,6 +33,12 @@ def test_get_resolver_youtube():
     assert r.filename("https://youtu.be/dQw4w9WgXcQ") == "youtube_dQw4w9WgXcQ"
 
 
+def test_get_resolver_rootz():
+    r = get_resolver("https://www.rootz.so/d/1Ia2fg")
+    assert r is not None
+    assert type(r).__name__ == "RootzResolver"
+
+
 def test_get_resolver_web_es_fallback_para_tiktok_y_vimeo():
     assert get_resolver("https://www.tiktok.com/@cuenta/video/123") is not None
     assert get_resolver("https://vimeo.com/123") is not None
@@ -44,4 +50,5 @@ def test_link_kind_clasifica_por_host():
     assert link_kind("https://www.instagram.com/reel/DGBd7s-pnRp/") == "video"
     assert link_kind("https://www.mediafire.com/file/abc/Juego.part01.rar/file") == "archivo"
     assert link_kind("https://megaup.net/abc/Juego.rar") == "archivo"
+    assert link_kind("https://www.rootz.so/d/1Ia2fg") == "archivo"
     assert link_kind("https://ejemplo-desconocido.com/x") == "desconocido"

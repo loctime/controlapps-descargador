@@ -1,10 +1,11 @@
 from .mediafire import MediaFireResolver
 from .megaup import MegaUpResolver
+from .rootz import RootzResolver
 from .instagram import InstagramResolver
 from .youtube import YouTubeResolver
 from .web import WebMediaResolver
 
-_RESOLVERS = [InstagramResolver(), YouTubeResolver(), MediaFireResolver(), MegaUpResolver(), WebMediaResolver()]
+_RESOLVERS = [InstagramResolver(), YouTubeResolver(), MediaFireResolver(), MegaUpResolver(), RootzResolver(), WebMediaResolver()]
 
 
 def link_kind(url):
