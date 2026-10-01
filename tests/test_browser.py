@@ -1,46 +1,16 @@
-import playwright.sync_api
-
-from descargador.browser import resolve_with_browser
+from descargador.browser import browser_executable
 
 
-def test_resolve_with_browser_pasa_destino_a_extract_from_page(monkeypatch):
-    llamadas = {}
+def test_browser_executable_prefiere_chrome(monkeypatch, tmp_path):
+    chrome = tmp_path / "Program Files" / "Google" / "Chrome" / "Application"
+    chrome.mkdir(parents=True)
+    executable = chrome / "chrome.exe"
+    executable.touch()
 
-    class FakePage:
-        def goto(self, url):
-            llamadas["goto"] = url
+    monkeypatch.setattr("descargador.browser.Path.is_file", lambda path: path == executable)
+    assert browser_executable({"PROGRAMFILES": str(tmp_path / "Program Files")}) == str(executable)
 
-    class FakeBrowser:
-        def new_page(self):
-            return FakePage()
 
-        def close(self):
-            llamadas["closed"] = True
-
-    class FakeChromium:
-        def launch(self, headless=False):
-            return FakeBrowser()
-
-    class FakePlaywrightCtx:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            return False
-
-        chromium = FakeChromium()
-
-    monkeypatch.setattr(playwright.sync_api, "sync_playwright", lambda: FakePlaywrightCtx())
-
-    def extract_from_page(page, destino):
-        llamadas["page"] = page
-        llamadas["destino"] = destino
-        return "resultado"
-
-    resultado = resolve_with_browser("http://x/pagina", extract_from_page, "/tmp/destino.rar")
-
-    assert resultado == "resultado"
-    assert llamadas["goto"] == "http://x/pagina"
-    assert llamadas["destino"] == "/tmp/destino.rar"
-    assert isinstance(llamadas["page"], FakePage)
-    assert llamadas["closed"] is True
+def test_browser_executable_none_sin_navegador(monkeypatch):
+    monkeypatch.setattr("descargador.browser.Path.is_file", lambda path: False)
+    assert browser_executable({"PROGRAMFILES": "C:/inexistente"}) is None
