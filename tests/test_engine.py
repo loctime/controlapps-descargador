@@ -234,3 +234,25 @@ def test_run_queue_saltea_item_quitado(tmp_path):
     # solo se proceso 'a'; 'b' fue quitado antes de tocarlo
     assert len(procesados) == 1
     assert b.estado == "pendiente"
+
+
+class ResolverQueFalla(Resolver):
+    ultimo_error = "Video unavailable"
+
+    def matches(self, url):
+        return True
+
+    def filename(self, url):
+        return "yt_id"
+
+    def download(self, url, destino, on_progress, should_pause, clip=None, audio_format=""):
+        return False, 0, 0, "error", None
+
+
+def test_fallo_de_descarga_propia_guarda_el_motivo(tmp_path):
+    item = Item(url="https://youtu.be/id", nombre="yt_id", carpeta=str(tmp_path))
+    engine = Engine(get_resolver=lambda url: ResolverQueFalla(), download_fn=None)
+
+    assert engine.process_one(item) == "error"
+    assert item.estado == "fallido"
+    assert item.error == "Video unavailable"

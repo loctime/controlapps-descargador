@@ -22,6 +22,7 @@ class Engine:
 
     def process_one(self, item):
         item.estado = "descargando"
+        item.error = ""
         self._notify(item)
 
         candidatos = [item.url] + item.mirrors
@@ -57,6 +58,7 @@ class Engine:
                         item.estado = "pausado"
                         self._notify(item)
                         return motivo
+                    item.error = getattr(resolver, "ultimo_error", "") or ""
                     continue
                 try:
                     direct = resolver.resolve(candidato)
@@ -86,8 +88,9 @@ class Engine:
                     self._notify(item)
                     return motivo
                 # motivo == "error": probamos el proximo candidato
-            except Exception:
+            except Exception as exc:
                 motivo_final = "error"
+                item.error = str(exc)[:300] or type(exc).__name__
 
         item.estado = "fallido"
         self._notify(item)

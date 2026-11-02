@@ -52,3 +52,13 @@ def test_link_kind_clasifica_por_host():
     assert link_kind("https://megaup.net/abc/Juego.rar") == "archivo"
     assert link_kind("https://www.rootz.so/d/1Ia2fg") == "archivo"
     assert link_kind("https://ejemplo-desconocido.com/x") == "desconocido"
+
+
+def test_js_runtime_usa_node_si_no_hay_deno(monkeypatch):
+    from descargador.resolvers import instagram
+    monkeypatch.setattr(instagram.shutil, "which", lambda n: "C:/node.exe" if n == "node" else None)
+    assert instagram.opciones_js_runtime() == {"js_runtimes": {"node": {}}}
+    monkeypatch.setattr(instagram.shutil, "which", lambda n: "x" if n == "deno" else "y")
+    assert instagram.opciones_js_runtime() == {}
+    monkeypatch.setattr(instagram.shutil, "which", lambda n: None)
+    assert instagram.opciones_js_runtime() == {}

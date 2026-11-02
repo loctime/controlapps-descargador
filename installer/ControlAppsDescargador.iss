@@ -2,6 +2,7 @@
 #define MyAppVersion "2.3.2"
 #define MyAppPublisher "ControlApps"
 #define MyAppExeName "ControlApps Descargador.exe"
+#define MyHostExeName "ControlApps Descargador Host.exe"
 
 [Setup]
 AppId={{B5A49EE7-6DC8-429A-AFB7-07348CD1E6B6}
@@ -27,10 +28,19 @@ Name: "desktopicon"; Description: "Crear un acceso directo en el Escritorio"; Gr
 
 [Files]
 Source: "..\dist\ControlApps Descargador\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\dist\ControlApps Descargador Host\*"; DestDir: "{app}\host"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\extension\*"; DestDir: "{app}\extension"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autoprograms}\ControlApps\Descargador"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\ControlApps Descargador"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
+Filename: "{app}\host\{#MyHostExeName}"; Parameters: "--register"; Flags: runhidden
 Filename: "{app}\{#MyAppExeName}"; Description: "Abrir ControlApps Descargador"; Flags: nowait postinstall skipifsilent
+
+[UninstallRun]
+Filename: "{app}\host\{#MyHostExeName}"; Parameters: "--unregister"; Flags: runhidden; RunOnceId: "QuitarHostNavegador"
+
+[UninstallDelete]
+Type: filesandordirs; Name: "{app}\host"

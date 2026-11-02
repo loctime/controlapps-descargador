@@ -57,6 +57,17 @@ def _tiempo_humano(segundos):
     return f"{horas:02}:{minutos:02}:{segundos:02}" if horas else f"{minutos:02}:{segundos:02}"
 
 
+def _parse_tiempo(texto):
+    """'90', '1:30' o '1:02:03' -> segundos; None si no se entiende."""
+    partes = texto.strip().split(":")
+    if not 1 <= len(partes) <= 3 or not all(p.strip().isdigit() for p in partes):
+        return None
+    total = 0
+    for parte in partes:
+        total = total * 60 + int(parte)
+    return total
+
+
 def _cargar_config():
     if os.path.exists(CONFIG):
         try:

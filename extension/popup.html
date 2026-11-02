@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { width: 320px; margin: 0; padding: 14px; font: 13px "Segoe UI", sans-serif; color: #334155; background: #f8fafc; }
+    h1 { margin: 0 0 4px; font-size: 15px; color: #0f172a; }
+    #titulo { margin: 0 0 10px; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .fila { display: flex; align-items: center; gap: 6px; margin: 6px 0; }
+    .fila label { width: 44px; }
+    input[type=text] { width: 70px; padding: 5px; border: 1px solid #cbd5e1; border-radius: 6px; }
+    select { width: 100%; padding: 5px; border: 1px solid #cbd5e1; border-radius: 6px; background: white; }
+    button { border: 0; border-radius: 6px; padding: 7px 10px; background: #e2e8f0; cursor: pointer; }
+    button:hover { background: #cbd5e1; }
+    button.primario { width: 100%; margin-top: 8px; background: #2563eb; color: white; font-weight: 700; }
+    button.primario:hover { background: #1d4ed8; }
+    button:disabled { opacity: .5; cursor: default; }
+    #estado { min-height: 18px; margin-top: 10px; }
+    #estado.error { color: #dc2626; }
+    #estado.ok { color: #16a34a; }
+    .nota { color: #64748b; font-size: 12px; margin: 4px 0 0; }
+  </style>
+</head>
+<body>
+  <h1>ControlApps Descargador</h1>
+  <p id="titulo">…</p>
+  <select id="modo">
+    <option value="">Modo: el de la app</option>
+    <option value="video">Video completo</option>
+    <option value="original">Audio original</option>
+    <option value="mp3">MP3 320 kbps</option>
+  </select>
+  <div id="recorte">
+    <p class="nota">Recorte (opcional)</p>
+    <div class="fila"><label for="inicio">Inicio</label><input id="inicio" type="text" placeholder="00:00"><button id="usar-inicio" title="Usar el minuto actual del video">Ahora</button></div>
+    <div class="fila"><label for="fin">Fin</label><input id="fin" type="text" placeholder="10:00"><button id="usar-fin" title="Usar el minuto actual del video">Ahora</button><span id="duracion" class="nota"></span></div>
+  </div>
+  <button id="enviar" class="primario">Enviar a la cola</button>
+  <div id="estado"></div>
+  <script src="common.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

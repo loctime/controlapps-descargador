@@ -22,12 +22,14 @@ from PySide6.QtWidgets import (
     QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
-from .app import CONFIG, ESTADO, _cargar_config, _guardar_config, _tiempo_humano
+from .app import CONFIG, ESTADO, _cargar_config, _guardar_config, _parse_tiempo, _tiempo_humano
 from .browser import resolve_with_browser
 from .downloader import download
 from .engine import Engine
 from .links import parse_links, sort_by_part
+from .native_host import marcar_viva, tomar_pedidos
 from .resolvers import get_resolver, link_kind
+from .resolvers.instagram import opciones_js_runtime
 from .search import buscar_youtube
 from .state import State
 from .system import abrir_ruta
@@ -49,6 +51,21 @@ def _ffmpeg_command():
     if location:
         return os.path.join(location, "ffmpeg.exe" if sys.platform.startswith("win") else "ffmpeg")
     return "ffmpeg"
+
+
+# Por encima de este largo (segundos) no bajamos la copia de previsualizacion
+# sola: el usuario puede elegir el rango escribiendo los tiempos, y la copia
+# completa queda como opcion explicita.
+PREVIEW_AUTO_MAX = 15 * 60
+
+
+def _preview_es_compatible(info, path):
+    """True si la copia bajada ya es H.264/AAC en mp4 y no necesita recodificarse."""
+    if not str(path).lower().endswith(".mp4"):
+        return False
+    vcodec = (info.get("vcodec") or "").lower()
+    acodec = (info.get("acodec") or "none").lower()
+    return vcodec.startswith("avc1") and (acodec == "none" or acodec.startswith("mp4a"))
 
 
 class Signals(QObject):
@@ -132,7 +149,10 @@ class CropPage(QWidget):
         add = QPushButton("Agregar recorte a la cola")
         add.setObjectName("primary"); add.setEnabled(False); add.clicked.connect(self._accept)
         self.add = add
-        actions.addWidget(self.play); actions.addWidget(pause); actions.addStretch(); actions.addWidget(add)
+        self.preview_button = QPushButton("Previsualizar")
+        self.preview_button.setToolTip("Baja una copia temporal del video completo para verlo antes de recortar")
+        self.preview_button.hide(); self.preview_button.clicked.connect(self._start_preview)
+        actions.addWidget(self.play); actions.addWidget(pause); actions.addWidget(self.preview_button); actions.addStretch(); actions.addWidget(add)
         right.addLayout(actions)
         layout.addWidget(self.right_widget, 1)
         self.right_widget.hide()
@@ -141,17 +161,33 @@ class CropPage(QWidget):
         row = QHBoxLayout()
         text = QLabel(label); text.setFixedWidth(54)
         slider = QSlider(Qt.Horizontal); slider.setEnabled(False)
-        value = QLabel("00:00"); value.setMinimumWidth(58)
+        value = QLineEdit("00:00"); value.setFixedWidth(70); value.setEnabled(False)
+        value.setToolTip("Escribi el tiempo (mm:ss o hh:mm:ss) y apreta Enter")
+        value.editingFinished.connect(lambda: self._time_typed(slider, value))
         row.addWidget(text); row.addWidget(slider, 1); row.addWidget(value)
         layout.addLayout(row)
         return slider, value
 
+    def _time_typed(self, slider, field):
+        seconds = _parse_tiempo(field.text())
+        if self.ready and seconds is not None:
+            slider.setValue(min(seconds * 1000, slider.maximum()))
+        # Normaliza el texto (y el cruce Inicio/Fin) aunque el valor no cambie.
+        (self._start_changed if slider is self.start else self._end_changed)(slider.value())
+
     def open_for(self, url):
         self.url, self.info, self.ready = url, None, False
         self.right_widget.show()
-        self.status.setText("Analizando enlace y preparando una copia temporal...")
+        self.status.setText("Analizando enlace...")
         self.player.stop(); self.cover.hide(); self.video.show(); self.play.setEnabled(False); self.add.setEnabled(False)
+        self.preview_button.hide()
+        for control in (self.start, self.end, self.start_text, self.end_text): control.setEnabled(False)
         threading.Thread(target=self._prepare, daemon=True).start()
+
+    def _start_preview(self):
+        self.preview_button.setEnabled(False)
+        self.status.setText("Descargando copia temporal...")
+        threading.Thread(target=self._make_preview, args=(self.info or {},), daemon=True).start()
 
     def show_thumbnail(self, url, reveal=True):
         """reveal=False: el panel sigue oculto hasta que yt-dlp confirme que es un video."""
@@ -188,20 +224,32 @@ class CropPage(QWidget):
     def _prepare(self):
         try:
             import yt_dlp
-            with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "noplaylist": True}) as ydl:
+            with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "noplaylist": True, **opciones_js_runtime()}) as ydl:
                 info = ydl.extract_info(self.url, download=False)
-            if not info.get("duration"):
-                raise RuntimeError("No se pudo conocer la duracion del video")
+            # No exigimos info.get("duration"): algunos reels de Instagram
+            # (los que llegan via DASH, comunes en enlaces con ?stkn=) no
+            # traen esa metadata aunque el video sea publico y se descargue
+            # bien. Sin duracion, los sliders esperan a la copia temporal.
             self.signals.metadata.emit(info)
+            if (info.get("duration") or 0) > PREVIEW_AUTO_MAX:
+                return
+            self._make_preview(info)
+        except Exception as exc:
+            self.signals.error.emit(str(exc))
+
+    def _make_preview(self, info):
+        try:
+            import yt_dlp
             folder = Path(tempfile.mkdtemp(prefix="controlapps-preview-"))
             self.preview_dir = str(folder)
             options = {
                 "quiet": True, "no_warnings": True, "noplaylist": True,
-                # Priorizamos H.264/AAC. YouTube suele entregar AV1 primero,
-                # pero muchas GPUs integradas no pueden mostrarlo desde Qt.
-                "format": "bv*[vcodec^=avc1][height<=480]+ba[acodec^=mp4a]/b[vcodec^=avc1][height<=480]/bv*[height<=480]+ba/b",
+                # Preferimos H.264/AAC en <=480p: pesa menos y no hace falta
+                # recodificar. El ultimo fallback no restringe codec ni altura
+                # (algunos reels de Instagram solo ofrecen VP9 mas arriba).
+                "format": "bv*[vcodec^=avc1][height<=480]+ba[acodec^=mp4a]/b[vcodec^=avc1][height<=480]/bv*[height<=480]+ba/b/bv*+ba/b",
                 "merge_output_format": "mp4", "outtmpl": str(folder / "preview.%(ext)s"),
-                "windowsfilenames": True,
+                "windowsfilenames": True, **opciones_js_runtime(),
             }
             def download_progress(data):
                 if data.get("status") == "downloading":
@@ -212,12 +260,14 @@ class CropPage(QWidget):
             ffmpeg = _ffmpeg_location()
             if ffmpeg: options["ffmpeg_location"] = ffmpeg
             with yt_dlp.YoutubeDL(options) as ydl:
-                ydl.download([self.url])
+                downloaded = ydl.extract_info(self.url, download=True)
             files = [p for p in folder.glob("preview.*") if p.suffix not in {".part", ".ytdl"}]
             source = max(files, key=lambda p: p.stat().st_mtime)
-            # Aun cuando el sitio no ofrece H.264, normalizamos la copia de
-            # trabajo a H.264 por software. Es temporal y nunca afecta la
-            # calidad del archivo final descargado por el usuario.
+            if _preview_es_compatible(downloaded or {}, source):
+                self.signals.preview_ready.emit(str(source))
+                return
+            # Si el sitio no ofrece H.264/AAC, normalizamos la copia de trabajo
+            # por software. Es temporal y no afecta el archivo final.
             compatible = folder / "preview-compatible.mp4"
             self.signals.progress.emit("Convirtiendo la copia a formato compatible... 0%")
             process = subprocess.Popen(
@@ -241,12 +291,33 @@ class CropPage(QWidget):
 
     def _metadata_ready(self, info):
         self.info = info
-        self.status.setText("Descargando copia temporal para editar...")
+        duration = int(info.get("duration") or 0)
+        if not duration:
+            self.status.setText("Descargando copia temporal para editar...")
+            return
+        # La duracion ya se conoce: el rango se puede elegir sin esperar la copia.
+        self._enable_range(duration * 1000)
+        if duration > PREVIEW_AUTO_MAX:
+            self.preview_button.show(); self.preview_button.setEnabled(True)
+            self.status.setText("Video largo: escribi Inicio y Fin (ej. 00:00 a 10:00) y agregalo a la cola. "
+                                "Previsualizar es opcional.")
+        else:
+            self.status.setText("Podes elegir el rango ya. Descargando copia temporal para previsualizar...")
+
+    def _enable_range(self, duration):
+        for control in (self.start, self.end):
+            control.setRange(0, duration); control.setEnabled(True)
+        self.start_text.setEnabled(True); self.end_text.setEnabled(True)
+        self.ready = True
+        self.start.setValue(0); self.end.setValue(duration)
+        self._start_changed(0); self._end_changed(duration)
+        self.add.setEnabled(True)
 
     def _preview_ready(self, path):
         self.player.setSource(QUrl.fromLocalFile(path))
         self.video.show()
         self.status.setText("Listo. Mueve Inicio y Fin; el rango se reproduce en loop.")
+        self.preview_button.hide()
         # QVideoWidget no muestra un fotograma mientras el reproductor queda
         # detenido en 00:00. Arrancar aqui hace visible la previsualizacion
         # apenas termina de bajar, sin que el usuario deba descubrir Play.
@@ -254,11 +325,10 @@ class CropPage(QWidget):
 
     def _duration_changed(self, duration):
         if not duration: return
-        self.ready = True
-        for control in (self.playhead, self.start, self.end):
-            control.setRange(0, duration); control.setEnabled(True)
-        self.start.setValue(0); self.end.setValue(duration)
-        self.play.setEnabled(True); self.add.setEnabled(True)
+        self.playhead.setRange(0, duration); self.playhead.setEnabled(True)
+        if not self.ready:
+            self._enable_range(duration)
+        self.play.setEnabled(True)
 
     def _start_changed(self, value):
         if self.ready and value >= self.end.value():
@@ -267,7 +337,7 @@ class CropPage(QWidget):
 
     def _end_changed(self, value):
         if self.ready and value <= self.start.value():
-            self.end.blockSignals(True); self.end.setValue(min(self.playhead.maximum(), self.start.value() + 1000)); self.end.blockSignals(False)
+            self.end.blockSignals(True); self.end.setValue(min(self.end.maximum(), self.start.value() + 1000)); self.end.blockSignals(False)
         self.end_text.setText(_tiempo_humano(self.end.value() // 1000))
 
     def _position_changed(self, position):
@@ -289,8 +359,11 @@ class CropPage(QWidget):
             shutil.rmtree(self.preview_dir, ignore_errors=True); self.preview_dir = None
         self.window.show_queue()
 
-    def _error(self, _):
-        self.status.setText("No se pudo preparar la previsualizacion. Revisa que el enlace sea publico.")
+    def _error(self, motivo):
+        # El motivo real casi nunca es "enlace privado" (yt-dlp ya rechaza
+        # esos antes de llegar aca); mostrarlo evita que el mensaje engañe
+        # sobre la causa real (formato no disponible, ffmpeg, red, etc).
+        self.status.setText(f"No se pudo preparar la previsualizacion: {motivo}")
 
 
 class DescargadorQt(QMainWindow):
@@ -325,6 +398,10 @@ class DescargadorQt(QMainWindow):
         self.preview_timer.timeout.connect(self._inspect_link)
         self.urls.textChanged.connect(lambda: self.preview_timer.start(600))
         self.timer = QTimer(self); self.timer.timeout.connect(self._drain); self.timer.start(250)
+        # El host de la extension del navegador deja pedidos en una carpeta y
+        # usa este latido para saber si hay que abrir la app.
+        self._ticks = 0
+        marcar_viva()
         self._refresh(); self._style()
         if self.actualizar_automaticamente:
             QTimer.singleShot(1500, lambda: self._check_update(False))
@@ -437,9 +514,10 @@ class DescargadorQt(QMainWindow):
         self.urls.clear(); self.state.save(); self._refresh()
         if added and self.auto_iniciar: self.pausado.clear(); self._start()
 
-    def add_clip(self,url,start,end):
+    def add_clip(self,url,start,end,modo=None):
         resolver=get_resolver(url); name=f"{resolver.filename(url)}_{_tiempo_humano(start).replace(':','-')}-{_tiempo_humano(end).replace(':','-')}"
-        audio_format = "" if self.modo == "video" else self.modo
+        modo = modo or self.modo
+        audio_format = "" if modo == "video" else modo
         if self.state.add(url, name, self.carpeta, clip={"inicio":start,"fin":end}, audio_format=audio_format):
             self.state.save(); self._refresh()
 
@@ -457,13 +535,43 @@ class DescargadorQt(QMainWindow):
         for it in self.state.items:
             name=it.nombre + (f"  [{_tiempo_humano(it.clip['inicio'])} - {_tiempo_humano(it.clip['fin'])}]" if it.clip else "")
             pct=int(it.bytes_bajados*100/it.total) if it.total else 0
-            item=QTreeWidgetItem([name, str(it.total or "?"), f"{pct}%", it.estado])
+            item=QTreeWidgetItem([name, str(it.total or "?"), f"{pct}%", it.estado + (f": {it.error}" if it.error and it.estado == "fallido" else "")])
             item.setData(0, Qt.UserRole, id(it)); item.setData(0, Qt.UserRole + 1, it.url)
             self.tree.addTopLevelItem(item)
         counts={s:sum(i.estado==s for i in self.state.items) for s in ("pendiente","descargando","completo","fallido")}
         self.summary.setText(" · ".join(f"{n} {s}" for s,n in counts.items() if n) or "Sin descargas en cola")
 
+    def _check_extension(self):
+        self._ticks += 1
+        if self._ticks % 8 == 0: marcar_viva()  # ~cada 2 s
+        for pedido in tomar_pedidos():
+            self._pedido_extension(pedido)
+
+    def _pedido_extension(self, pedido):
+        if not self.carpeta:
+            # No modal: un exec() bloquearia el timer y el latido, y el host
+            # creeria que la app esta cerrada y abriria una segunda.
+            self.show(); self.activateWindow()
+            if not getattr(self, "_aviso_carpeta", None):
+                box = QMessageBox(QMessageBox.Warning, "Falta carpeta",
+                                  "Llegó un enlace desde el navegador, pero primero elegí una carpeta destino y volvé a enviarlo.", QMessageBox.Ok, self)
+                box.setAttribute(Qt.WA_DeleteOnClose)
+                box.destroyed.connect(lambda *_: setattr(self, "_aviso_carpeta", None))
+                self._aviso_carpeta = box
+                box.open()
+            return
+        modo = pedido.get("modo", self.modo)
+        if "inicio" in pedido:
+            self.add_clip(pedido["url"], pedido["inicio"], pedido["fin"], modo)
+        else:
+            resolver = get_resolver(pedido["url"])
+            name = resolver.filename(pedido["url"]) if resolver else pedido["url"].rsplit("/",1)[-1]
+            if self.state.add(pedido["url"], name, self.carpeta, audio_format="" if modo == "video" else modo):
+                self.state.save(); self._refresh()
+        if self.auto_iniciar: self.pausado.clear(); self._start()
+
     def _drain(self):
+        self._check_extension()
         changed=False
         try:
             while True: self.events.get_nowait(); changed=True

@@ -1,6 +1,7 @@
 import glob
 import os
 import re
+import shutil
 import sys
 from urllib.parse import urlparse
 
@@ -11,6 +12,16 @@ class DownloadPaused(Exception):
     """Corta yt-dlp desde un progress hook cuando la cola se pausa."""
 
 
+def opciones_js_runtime():
+    """yt-dlp solo activa deno por defecto; si hay node lo habilitamos, porque
+    sin runtime JS YouTube puede dejar al video sin formatos."""
+    if shutil.which("deno"):
+        return {}
+    if shutil.which("node"):
+        return {"js_runtimes": {"node": {}}}
+    return {}
+
+
 class InstagramResolver(Resolver):
     """Descarga reels y publicaciones publicas mediante yt-dlp.
 
@@ -19,6 +30,7 @@ class InstagramResolver(Resolver):
     """
 
     kind = "video"
+    ultimo_error = ""
     _PATH = re.compile(r"^/(?:reel|p|tv|stories)/([^/?#]+)", re.IGNORECASE)
 
     def matches(self, url):
@@ -41,6 +53,7 @@ class InstagramResolver(Resolver):
 
     def download(self, url, destino, on_progress=None, should_pause=None, clip=None, audio_format=""):
         """Devuelve (ok, bajado, total, motivo, nombre_final)."""
+        self.ultimo_error = ""
         try:
             import yt_dlp
         except ImportError as exc:
@@ -68,6 +81,7 @@ class InstagramResolver(Resolver):
             "continuedl": True,
             "progress_hooks": [hook],
             "windowsfilenames": True,
+            **opciones_js_runtime(),
         }
         if audio_format:
             opciones["format"] = "bestaudio/best"
@@ -95,7 +109,8 @@ class InstagramResolver(Resolver):
                 ydl.download([url])
         except DownloadPaused:
             return False, progreso["bajado"], progreso["total"], "pausado", None
-        except Exception:
+        except Exception as exc:
+            self.ultimo_error = re.sub(r"^ERROR:\s*", "", str(exc)).strip()[:300] or type(exc).__name__
             return False, progreso["bajado"], progreso["total"], "error", None
 
         archivos = [
@@ -103,6 +118,7 @@ class InstagramResolver(Resolver):
             if os.path.isfile(path) and not path.endswith((".part", ".ytdl"))
         ]
         if not archivos:
+            self.ultimo_error = "yt-dlp no generó ningún archivo"
             return False, progreso["bajado"], progreso["total"], "error", None
 
         final = max(archivos, key=os.path.getmtime)

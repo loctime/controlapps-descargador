@@ -15,6 +15,7 @@ class Item:
     mirrors: list = field(default_factory=list)
     clip: dict = field(default_factory=dict)
     audio_format: str = ""
+    error: str = ""
 
 
 class State:

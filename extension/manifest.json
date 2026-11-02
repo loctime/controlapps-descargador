@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "ControlApps Descargador",
+  "version": "1.0.0",
+  "description": "Envia el video que estas viendo a ControlApps Descargador, con recorte opcional.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA8HJ9A4Gc3tzb5Hmp77PnESsBqFR+/AQUhnTdzRkKEam+8NBg/ZEBwfT3Wy9SSbA8WXR2jsof+e+fxH3c4T5XskfMXTTiFeCETlMCy2rWIGbmnKBMV7xIDOIJgsQChLdeG+cUwThynpOq/lSetDnxGnAz+eUO3plrfEzR7GgTnWmnfMvP6QyOxVezFVJASsqb7qBdGRXwlASBosHk0Dh2zdTuc7sturkS3/BSzwQuNAFEEcbkxc8zGHoxzQRyHS0TLYGxQh4/MhZXfw6rpIVjH55xEVJKvQKqsH0xp1LF5u1ny4XN4JK1daZ8etMQpbuN16RPOGqzWGBpg8GUKuMtTQIDAQAB",
+  "minimum_chrome_version": "110",
+  "permissions": [
+    "nativeMessaging",
+    "contextMenus",
+    "activeTab",
+    "scripting"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "ControlApps Descargador",
+    "default_popup": "popup.html"
+  },
+  "icons": {
+    "16": "icons/16.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  }
+}
